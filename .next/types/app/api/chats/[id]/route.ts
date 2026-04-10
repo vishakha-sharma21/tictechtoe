@@ -1,4 +1,4 @@
-// File: C:\Users\Asus\OneDrive\Desktop\DAGent\src\app\api\chats\[id]\route.ts
+// File: /Users/ranawatprajinrajbhavesh/Desktop/DAGent/src/app/api/chats/[id]/route.ts
 import * as entry from '../../../../../../src/app/api/chats/[id]/route.js'
 import type { NextRequest } from 'next/server.js'
 

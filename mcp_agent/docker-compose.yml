@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  addition_mcp:
+    build: ./addition_mcp
+    ports:
+      - "8001:8001"
+  
+  subtraction_mcp:
+    build: ./subtraction_mcp
+    ports:
+      - "8002:8002"
+  
+  multiplication_mcp:
+    build: ./multiplication_mcp
+    ports:
+      - "8003:8003"

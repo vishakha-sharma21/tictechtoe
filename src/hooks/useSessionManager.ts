@@ -2,9 +2,11 @@
 import { useState, useEffect, useCallback } from 'react'
 
 export interface Message {
-  role: 'human' | 'agent'
+  role: 'human' | 'agent' | 'tool_connect'
   content: string
   timestamp: string
+  tool?: string
+  id?: string
 }
 
 export interface ChatSession {
@@ -17,6 +19,8 @@ export interface ChatSession {
   completed: boolean
   created_at: string
   updated_at: string
+  missing_tools?: string[]
+  user_id?: string
 }
 
 export function useSessionManager() {
@@ -26,6 +30,7 @@ export function useSessionManager() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [isSendingMessage, setIsSendingMessage] = useState(false) // New flag
 
   // Load sidebar session list
   const loadSessions = useCallback(async () => {
@@ -46,9 +51,12 @@ export function useSessionManager() {
     setIsLoading(true)
     const res = await fetch(`/api/chats/${id}`)
     const data = await res.json()
-    setActiveSession(data)
+    // Don't overwrite if we're in the middle of sending a message
+    if (!isSendingMessage) {
+      setActiveSession(data)
+    }
     setIsLoading(false)
-  }, [])
+  }, [isSendingMessage])
 
   // Create a new session
   const createSession = useCallback(async () => {
@@ -92,64 +100,116 @@ export function useSessionManager() {
     }
   }, [activeSessionId, sessions, selectSession, createSession])
 
-  // Send a message â persists user message, calls agent, persists response
+  // Send a message - calls process-query API and handles missing integrations
   const sendMessage = useCallback(async (content: string) => {
     if (!activeSessionId) return
-    setIsSending(true)
-
-    // 1. Optimistic UI update
-    const userMsg: Message = { role: 'human', content, timestamp: new Date().toISOString() }
-    setActiveSession(prev => prev
-      ? { ...prev, chat_history: [...(prev.chat_history || []), userMsg] }
-      : prev
-    )
-
-    // 2. Update query and persist user message
-    const updatedHistory = activeSession ? [...(activeSession.chat_history || []), userMsg] : [userMsg]
-    await fetch(`/api/chats/${activeSessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        query: content,
-        chat_history: updatedHistory
-      }),
-    })
-
-    // 3. Call your planner/agent API (replace URL with your actual endpoint)
-    let agentContent = 'Workflow planned successfully.'
+    
     try {
-      const agentRes = await fetch('/api/agent/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: content, sessionId: activeSessionId }),
+      setIsSending(true)
+      setIsSendingMessage(true)
+
+      // Step 1: Get current history and append human message immediately
+      const currentHistory = activeSession?.chat_history || []
+      const humanMsg: Message = { role: 'human', content, timestamp: new Date().toISOString() }
+      const withHuman = [...currentHistory, humanMsg]
+      
+      // Update state with human message
+      setActiveSession(prev => prev ? { ...prev, chat_history: withHuman } : prev)
+
+      // Step 2: Save to localStorage for OAuth retry
+      localStorage.setItem("dagent_last_query", content)
+      localStorage.setItem("dagent_last_session", activeSessionId)
+
+      // Step 3: Call API
+      const res = await fetch("http://127.0.0.1:8001/process-query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          user_id: "u001", // TODO: Get from auth session
+          session_id: activeSessionId, 
+          query: content 
+        })
       })
-      const agentData = await agentRes.json()
-      agentContent = agentData.response ?? agentContent
-    } catch {}
+      const data = await res.json()
 
-    // 4. Persist agent response
-    const agentMsg: Message = { role: 'agent', content: agentContent, timestamp: new Date().toISOString() }
-    const finalHistory = [...updatedHistory, agentMsg]
-    await fetch(`/api/chats/${activeSessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_history: finalHistory }),
-    })
+      // Step 4: Build agent message
+      let agentContent = ''
+      if (data.status === "ready") {
+        agentContent = "All tools connected. Processing your request..."
+      } else if (data.status === "missing_integrations") {
+        const toolNames = data.missing_tools.join(", ")
+        agentContent = `I need access to: ${toolNames}. Please connect them below to continue.`
+      }
 
-    // 5. Update UI with agent response
-    setActiveSession(prev => prev
-      ? { ...prev, chat_history: finalHistory }
-      : prev
-    )
+      const agentMsg: Message = { role: 'agent', content: agentContent, timestamp: new Date().toISOString() }
+      const withBoth = [...withHuman, agentMsg]
 
-    // 6. Refresh sidebar list (updated_at order)
-    setSessions(prev => prev.map(s =>
-      s._id === activeSessionId
-        ? { ...s, updated_at: new Date().toISOString() }
-        : s
-    ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
+      // Step 5: Handle missing integrations and add tool_connect cards
+      let finalHistory = [...withBoth]
+      if (data.status === "missing_integrations") {
+        // Store missing tools in session
+        setActiveSession(prev => prev ? { 
+          ...prev, 
+          missing_tools: data.missing_tools,
+          user_id: "u001" // TODO: Get from auth session
+        } : prev)
 
-    setIsSending(false)
+        // Add tool_connect cards for each missing tool
+        data.missing_tools.forEach((tool: string) => {
+          if (tool === 'github') {
+            const connectMsg: Message = {
+              role: 'tool_connect',
+              content: '',
+              tool: 'github',
+              id: Date.now().toString(),
+              timestamp: new Date().toISOString()
+            }
+            finalHistory = [...finalHistory, connectMsg]
+          }
+        })
+      }
+
+      // Step 6: Update UI with final state (include tool_connect cards)
+      setActiveSession(prev => prev ? { ...prev, chat_history: finalHistory } : prev)
+
+      // Step 7: Save to database (only human + agent, no tool_connect cards)
+      const dbHistory = [humanMsg, agentMsg]
+      await fetch(`/api/chats/${activeSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          query: content,
+          chat_history: dbHistory
+        }),
+      })
+
+      // Step 8: Refresh sidebar list
+      setSessions(prev => prev.map(s =>
+        s._id === activeSessionId
+          ? { ...s, updated_at: new Date().toISOString() }
+          : s
+      ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
+
+    } catch (error) {
+      console.error('Error in sendMessage:', error)
+      
+      // Add error message to chat
+      const errorMsg: Message = { 
+        role: 'agent', 
+        content: "Sorry, I had trouble processing your request. Please try again.", 
+        timestamp: new Date().toISOString() 
+      }
+      
+      setActiveSession(prev => prev ? {
+        ...prev,
+        chat_history: [...(prev?.chat_history || []), errorMsg]
+      } : prev)
+      
+    } finally {
+      // ALWAYS reset sending flags
+      setIsSending(false)
+      setIsSendingMessage(false)
+    }
   }, [activeSessionId, activeSession])
 
   // Update workflow in DB

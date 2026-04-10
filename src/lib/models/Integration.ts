@@ -16,9 +16,24 @@ const MetaSchema = new mongoose.Schema({
 
 const IntegrationSchema = new mongoose.Schema({
   user_id: { type: String, required: true, unique: true }, // u001, u002, etc.
-  provider: { type: String, required: true },
-  credentials: { type: CredentialsSchema, required: true },
-  meta: { type: MetaSchema, required: true },
+  providers: {
+    google: {
+      credentials: CredentialsSchema,
+      meta: MetaSchema
+    },
+    github: {
+      credentials: CredentialsSchema, 
+      meta: MetaSchema
+    },
+    gmail: {
+      credentials: CredentialsSchema,
+      meta: MetaSchema
+    },
+    google_drive: {
+      credentials: CredentialsSchema,
+      meta: MetaSchema
+    }
+  },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 })
@@ -35,7 +50,7 @@ IntegrationSchema.statics.getNextUserId = async function() {
 
 // Static method to find by provider account ID
 IntegrationSchema.statics.findByProviderAccountId = function(providerAccountId) {
-  return this.findOne({ 'meta.provider_account_id': providerAccountId })
+  return this.findOne({ 'providers.meta.provider_account_id': providerAccountId })
 }
 
 export const Integration =

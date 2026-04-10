@@ -1,4 +1,4 @@
-// File: C:\Users\Asus\OneDrive\Desktop\DAGent\src\app\api\auth\sync\route.ts
+// File: /Users/ranawatprajinrajbhavesh/Desktop/DAGent/src/app/api/auth/sync/route.ts
 import * as entry from '../../../../../../src/app/api/auth/sync/route.js'
 import type { NextRequest } from 'next/server.js'
 

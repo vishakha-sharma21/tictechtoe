@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { ChatMessage } from './ChatMessage'
 import { WorkflowCard } from './WorkflowCard'
+import { ConnectToolCard } from './ConnectToolCard'
+import ConnectGithubCard from '../ConnectGithubCard'
 
 interface ChatPanelProps {
   session: {
@@ -11,21 +13,26 @@ interface ChatPanelProps {
     title: string
     query: string
     chat_history: {
-      role: 'human' | 'agent'
+      role: 'human' | 'agent' | 'tool_connect'
       content: string
       timestamp: string
+      tool?: string
+      id?: string
     }[]
     react_flow: { nodes: any[]; edges: any[] }
     completed: boolean
     created_at: string
     updated_at: string
+    missing_tools?: string[]
+    user_id?: string
   } | null
   isLoading: boolean
   isSending: boolean
   onSend: (content: string) => void
+  onSendComplete?: () => void
 }
 
-export function ChatPanel({ session, isLoading, isSending, onSend }: ChatPanelProps) {
+export function ChatPanel({ session, isLoading, isSending, onSend, onSendComplete }: ChatPanelProps) {
   const [message, setMessage] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -34,6 +41,13 @@ export function ChatPanel({ session, isLoading, isSending, onSend }: ChatPanelPr
       bottomRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [session?.chat_history])
+
+  // Optional: Add any completion logic here if needed
+  // useEffect(() => {
+  //   if (!isSending) {
+  //     onSendComplete?.()
+  //   }
+  // }, [isSending, onSendComplete])
 
   return (
     <div className="w-105 bg-surface border-r border-border flex flex-col">
@@ -67,13 +81,20 @@ export function ChatPanel({ session, isLoading, isSending, onSend }: ChatPanelPr
           </div>
         ) : (
           <>
-            {session?.chat_history?.map((msg: any, index: number) => (
-              <div key={index} className={msg.role === 'human' ? 'flex justify-end' : 'flex gap-3'}>
+            {session?.chat_history.map((msg, idx) => (
+              <div key={idx} className={`flex gap-3 ${msg.role === 'human' ? 'justify-end' : ''}`}>
                 {msg.role === 'human' ? (
-                  <div className="max-w-xs bg-paper border border-border rounded-lg p-3 rounded-tr-none">
-                    <p className="text-sm text-text-primary">{msg.content}</p>
-                  </div>
-                ) : (
+                  <>
+                    <div className="flex-1">
+                      <div className="bg-text-primary text-white rounded-lg p-3 rounded-tr-none">
+                        <p className="text-sm text-text-primary">{msg.content}</p>
+                      </div>
+                    </div>
+                    <div className="w-6.5 h-6.5 bg-text-primary rounded flex items-center justify-center text-xs font-mono text-paper flex-shrink-0">
+                      dg
+                    </div>
+                  </>
+                ) : msg.role === 'agent' ? (
                   <>
                     <div className="w-6.5 h-6.5 bg-text-primary rounded flex items-center justify-center text-xs font-mono text-paper flex-shrink-0">
                       dg
@@ -84,9 +105,40 @@ export function ChatPanel({ session, isLoading, isSending, onSend }: ChatPanelPr
                       </div>
                     </div>
                   </>
-                )}
+                ) : msg.role === 'tool_connect' && msg.tool === 'github' ? (
+                  <>
+                    <div className="w-6.5 h-6.5 bg-text-primary rounded flex items-center justify-center text-xs font-mono text-paper flex-shrink-0">
+                      dg
+                    </div>
+                    <div className="flex-1">
+                      <ConnectGithubCard 
+                        user_id={session.user_id || 'u001'}
+                        session_id={session.session_id || ''}
+                      />
+                    </div>
+                  </>
+                ) : null}
               </div>
             ))}
+            
+            {/* ConnectToolCards for missing tools */}
+            {session?.missing_tools && session.missing_tools.length > 0 && session.user_id && session.session_id && (
+              <div className="flex gap-3">
+                <div className="w-6.5 h-6.5 bg-text-primary rounded flex items-center justify-center text-xs font-mono text-paper flex-shrink-0">
+                  dg
+                </div>
+                <div className="flex-1 space-y-2">
+                  {session.missing_tools.map((tool) => (
+                    <ConnectToolCard
+                      key={tool}
+                      tool={tool}
+                      user_id={session.user_id!}
+                      session_id={session.session_id!}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Thinking indicator */}
             {isSending && (
@@ -119,14 +171,13 @@ export function ChatPanel({ session, isLoading, isSending, onSend }: ChatPanelPr
                 e.preventDefault()
                 if (message.trim()) {
                   onSend(message)
-                  setMessage('')
+                  setMessage('') // Clear immediately after sending
                 }
               }
             }}
             placeholder="Describe what you want to build..."
             className="w-full resize-none outline-none text-sm text-text-primary placeholder-text-muted"
             rows={1}
-            disabled={isSending}
           />
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-2">
@@ -147,8 +198,7 @@ export function ChatPanel({ session, isLoading, isSending, onSend }: ChatPanelPr
                   setMessage('')
                 }
               }}
-              disabled={isSending}
-              className="px-3 py-1.5 bg-text-primary text-paper rounded text-sm font-medium hover:bg-text-secondary transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 bg-text-primary text-paper rounded text-sm font-medium hover:bg-text-secondary transition-colors"
             >
               Send
             </button>

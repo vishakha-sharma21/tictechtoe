@@ -97,9 +97,9 @@ export default function Sidebar({ sessions, activeId, onSelect, onNewSession, on
                 </button>
               </div>
             ) : (
-              <button
+              <div
                 onClick={() => onSelect(session._id)}
-                className="flex items-center gap-2.5 rounded-lg px-2 py-2 w-full text-left transition-all"
+                className="flex items-center gap-2.5 rounded-lg px-2 py-2 w-full text-left transition-all cursor-pointer"
               >
                 <div className="w-7 h-7 rounded-lg bg-[#eae9e4] border border-[#e0ddd6] flex items-center justify-center flex-shrink-0">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
@@ -123,7 +123,7 @@ export default function Sidebar({ sessions, activeId, onSelect, onNewSession, on
                     <Trash2 size={12} />
                   </button>
                 )}
-              </button>
+              </div>
             )}
           </div>
         ))}
