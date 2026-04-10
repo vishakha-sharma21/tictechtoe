@@ -28,4 +28,6 @@ if (process.env.NODE_ENV === 'development') {
   clientPromise = client.connect()
 }
 
+// Export both the clientPromise and a function to get the client for Auth.js adapter
 export default clientPromise
+export { clientPromise }

@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { useDispatch } from 'react-redux'
+import { signIn } from 'next-auth/react'
 import { Nav } from '@/components/shared/Nav'
 import { Hero } from '@/components/landing/Hero'
 import { Marquee } from '@/components/landing/Marquee'
@@ -10,11 +10,18 @@ import { IntegrationSection } from '@/components/landing/IntegrationSection'
 import { DagSection } from '@/components/landing/DagSection'
 import { Button } from '@/components/shared/Button'
 import TextType from '@/components/shared/TextType'
-import AuthModal from '@/components/auth/AuthModal'
-import { openModal } from '@/store/authModalSlice'
+import { useAuthSync } from '@/hooks/useAuthSync'
 
 export default function HomePage() {
-  const dispatch = useDispatch()
+  const { session, status } = useAuthSync()
+
+  const handleGetStarted = () => {
+    if (status === 'authenticated') {
+      window.location.href = '/dashboard'
+    } else {
+      signIn('google', { callbackUrl: '/dashboard' })
+    }
+  }
 
   return (
     <div className="min-h-screen bg-paper">
@@ -50,9 +57,9 @@ export default function HomePage() {
             <Button 
               size="lg" 
               className="text-base"
-              onClick={() => dispatch(openModal('signup'))}
+              onClick={handleGetStarted}
             >
-              Try DAGent free
+              {status === 'authenticated' ? 'Go to Dashboard' : 'Try DAGent free'}
             </Button>
           </div>
         </section>
@@ -87,9 +94,6 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
-
-      {/* Auth Modal */}
-      <AuthModal />
     </div>
   )
 }
