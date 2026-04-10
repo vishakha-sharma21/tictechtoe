@@ -1,23 +1,9 @@
-import React from 'react'
-import { IconRail } from '@/components/dashboard/IconRail'
-import { Sidebar } from '@/components/dashboard/Sidebar'
-import { ChatPanel } from '@/components/dashboard/ChatPanel'
-import { CanvasPanel } from '@/components/dashboard/CanvasPanel'
+import { auth } from '@/lib/nextauth'
+import { redirect } from 'next/navigation'
+import DashboardShell from '@/components/dashboard/DashboardShell'
 
-export default function DashboardPage() {
-  return (
-    <div className="h-screen bg-paper flex">
-      {/* Icon Rail */}
-      <IconRail />
-      
-      {/* Sidebar */}
-      <Sidebar />
-      
-      {/* Chat Panel */}
-      <ChatPanel />
-      
-      {/* Canvas Panel */}
-      <CanvasPanel />
-    </div>
-  )
+export default async function DashboardPage() {
+  const session = await auth()
+  if (!session) redirect('/')
+  return <DashboardShell />
 }

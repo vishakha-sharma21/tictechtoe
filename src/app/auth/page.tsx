@@ -1,8 +1,13 @@
-import React from 'react'
-import Link from 'next/link'
+'use client'
+
+import { signIn } from 'next-auth/react'
 import { Button } from '@/components/shared/Button'
 
 export default function AuthPage() {
+  const handleGoogleSignIn = () => {
+    signIn('google', { callbackUrl: '/dashboard' })
+  }
+
   return (
     <div className="min-h-screen bg-paper flex items-center justify-center px-4">
       <div className="w-full max-w-md">
@@ -14,55 +19,16 @@ export default function AuthPage() {
               Welcome to DAGent
             </h2>
             <p className="text-sm text-text-muted">
-              Sign in to start building intelligent workflows
+              Sign in with Google to start building intelligent workflows
             </p>
           </div>
 
-          {/* Form */}
-          <form className="space-y-4 mb-6">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-text-primary mb-2">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                className="input"
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-text-primary mb-2">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                className="input"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-            <Button type="submit" className="w-full">
-              Continue →
-            </Button>
-          </form>
-
-          {/* Divider */}
-          <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-text-muted">OR</span>
-            </div>
-          </div>
-
           {/* Google OAuth */}
-          <Button variant="outline" className="w-full mb-6">
+          <Button 
+            variant="outline" 
+            className="w-full mb-6"
+            onClick={handleGoogleSignIn}
+          >
             <svg
               className="w-5 h-5 mr-2"
               viewBox="0 0 24 24"
@@ -76,12 +42,9 @@ export default function AuthPage() {
             Continue with Google
           </Button>
 
-          {/* Switch Link */}
-          <div className="text-center text-sm">
-            <span className="text-text-muted">No account?</span>
-            <Link href="/auth/signup" className="text-accent-blue hover:text-accent-blue/80 ml-1">
-              Sign up — it's free
-            </Link>
+          {/* Info */}
+          <div className="text-center text-xs text-text-muted">
+            By signing in, you agree to our Terms of Service and Privacy Policy
           </div>
         </div>
       </div>

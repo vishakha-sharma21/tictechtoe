@@ -6,7 +6,12 @@ import { ParallelBlock } from './ParallelBlock'
 import { LogViewer } from './LogViewer'
 import { mockNodes } from '@/lib/mock-data'
 
-export function CanvasPanel() {
+interface CanvasPanelProps {
+  workflow: { nodes: any[]; edges: any[] }
+  onWorkflowChange: (nodes: any[], edges: any[]) => void
+}
+
+export function CanvasPanel({ workflow, onWorkflowChange }: CanvasPanelProps) {
   const [view, setView] = useState<'dag' | 'logs'>('dag')
 
   return (
@@ -14,8 +19,8 @@ export function CanvasPanel() {
       {/* Top Bar */}
       <div className="h-13 bg-white border-b border-border flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
-          <span className="text-xs font-mono text-text-muted">wf_7f2kp</span>
-          <span className="text-sm text-text-primary">{mockNodes.length} nodes · completed 2.8s</span>
+          <span className="text-xs font-mono text-text-muted">workflow</span>
+          <span className="text-sm text-text-primary">{workflow.nodes.length} nodes</span>
         </div>
         
         <div className="flex items-center gap-2">
@@ -46,48 +51,27 @@ export function CanvasPanel() {
       <div className="flex-1 overflow-y-auto p-6">
         {view === 'dag' ? (
           <div className="space-y-4">
-            {/* Progress Bar */}
-            <div className="mb-6">
-              <div className="h-2 bg-border rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-accent-blue to-purple-500 rounded-full transition-all duration-600"
-                  style={{ width: '75%' }}
-                />
+            {workflow.nodes.length === 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-[#888] text-sm">Workflow will appear here after your first query.</p>
               </div>
-              <div className="flex justify-between mt-2">
-                <span className="text-xs font-mono text-text-muted">3/4 nodes · 2.8s elapsed</span>
+            ) : (
+              <div className="space-y-4">
+                {workflow.nodes.map((node, index) => (
+                  <div key={index}>
+                    <DagNodeCard
+                      node={node}
+                      status="done"
+                    />
+                    {index < workflow.nodes.length - 1 && (
+                      <div className="flex justify-center">
+                        <div className="w-px h-8 bg-border" />
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            </div>
-
-            {/* DAG Nodes */}
-            <div className="space-y-4">
-              {/* Parse Prompt Node */}
-              <DagNodeCard
-                node={mockNodes[0]}
-                status="done"
-              />
-
-              {/* Arrow */}
-              <div className="flex justify-center">
-                <div className="w-px h-8 bg-border" />
-              </div>
-
-              {/* Parallel Block */}
-              <ParallelBlock
-                nodes={mockNodes.slice(1, 3)}
-              />
-
-              {/* Arrow */}
-              <div className="flex justify-center">
-                <div className="w-px h-8 bg-border" />
-              </div>
-
-              {/* Final Node */}
-              <DagNodeCard
-                node={mockNodes[3]}
-                status="idle"
-              />
-            </div>
+            )}
           </div>
         ) : (
           <LogViewer />
