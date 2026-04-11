@@ -35,7 +35,18 @@ def get_github_token(user_id: str) -> str:
     if not integration:
         raise ValueError(f"No integration found for user_id: {user_id}")
     
-    token = integration.get("providers", {}).get("github", {}).get("credentials", {}).get("access_token")
+    providers = integration.get("providers", [])
+    github_provider = None
+    
+    for provider in providers:
+        if provider.get("provider") == "github":
+            github_provider = provider
+            break
+    
+    if not github_provider:
+        raise ValueError(f"No GitHub provider found for user_id: {user_id}")
+    
+    token = github_provider.get("credentials", {}).get("access_token")
     if not token:
         raise ValueError(f"No GitHub access token found for user_id: {user_id}")
     

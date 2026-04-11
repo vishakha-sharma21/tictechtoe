@@ -5,6 +5,7 @@ import IconRail from './IconRail'
 import Sidebar from './Sidebar'
 import { ChatPanel } from './ChatPanel'
 import { CanvasPanel } from './CanvasPanel'
+import { DagPanel } from './DagPanel'
 
 export default function DashboardShell() {
   const {
@@ -19,6 +20,7 @@ export default function DashboardShell() {
     deleteSession,
     sendMessage,
     updateWorkflow,
+    reactFlowData,
   } = useSessionManager()
 
   // Auto-retry logic for OAuth return
@@ -51,7 +53,7 @@ export default function DashboardShell() {
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
       <IconRail />
       <Sidebar
-        sessions={sessions}
+        sessions={sessions as any}
         activeId={activeSessionId}
         onSelect={selectSession}
         onNewSession={createSession}
@@ -59,7 +61,7 @@ export default function DashboardShell() {
         isCreating={isCreating}
       />
       <ChatPanel
-        session={activeSession}
+        session={activeSession as any}
         isLoading={isLoading}
         isSending={isSending}
         onSend={sendMessage}
@@ -67,10 +69,7 @@ export default function DashboardShell() {
           // Optional: Add any completion logic here
         }}
       />
-      <CanvasPanel
-        workflow={activeSession?.react_flow ?? { nodes: [], edges: [] }}
-        onWorkflowChange={updateWorkflow}
-      />
+      <DagPanel reactFlowData={reactFlowData} />
     </div>
   )
 }

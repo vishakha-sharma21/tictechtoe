@@ -2,11 +2,13 @@
 import { useState, useEffect, useCallback } from 'react'
 
 export interface Message {
-  role: 'human' | 'agent' | 'tool_connect'
+  role: 'human' | 'agent' | 'tool_connect' | 'agent_plan'
   content: string
   timestamp: string
   tool?: string
   id?: string
+  dag?: any
+  confirmCard?: boolean
 }
 
 export interface ChatSession {
@@ -30,6 +32,8 @@ export function useSessionManager() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [orchMessages, setOrchMessages] = useState<any[]>([])
+  const [reactFlowData, setReactFlowData] = useState<any>({ nodes: [], edges: [] })
   const [isSendingMessage, setIsSendingMessage] = useState(false) // New flag
 
   // Load sidebar session list
@@ -121,11 +125,15 @@ export function useSessionManager() {
       localStorage.setItem("dagent_last_session", activeSessionId)
 
       // Step 3: Call API
+      // Get user_id from session
+      const session = await fetch('/api/auth/session').then(res => res.json())
+      const userId = session?.user?.userId || 'unknown'
+      
       const res = await fetch("http://127.0.0.1:8001/process-query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          user_id: "u001", // TODO: Get from auth session
+          user_id: userId,
           session_id: activeSessionId, 
           query: content 
         })
@@ -151,7 +159,7 @@ export function useSessionManager() {
         setActiveSession(prev => prev ? { 
           ...prev, 
           missing_tools: data.missing_tools,
-          user_id: "u001" // TODO: Get from auth session
+          user_id: userId
         } : prev)
 
         // Add tool_connect cards for each missing tool
@@ -172,7 +180,58 @@ export function useSessionManager() {
       // Step 6: Update UI with final state (include tool_connect cards)
       setActiveSession(prev => prev ? { ...prev, chat_history: finalHistory } : prev)
 
-      // Step 7: Save to database (only human + agent, no tool_connect cards)
+      // Step 7: Handle orchestration if tools are ready
+      if (data.status === "ready") {
+        // Add user message to orchestration history
+        const newOrchMessages = [...orchMessages, { role: "user", content }]
+        setOrchMessages(newOrchMessages)
+        
+        // Call orchestration API
+        const orchRes = await fetch("http://127.0.0.1:8001/orchestrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            session_id: activeSessionId,
+            messages: newOrchMessages
+          })
+        })
+        
+        const orchResult = await orchRes.json()
+        
+        // Handle orchestration response
+        if (orchResult.status === "clarify") {
+          const clarifyMsg: Message = {
+            role: 'agent',
+            content: orchResult.question,
+            timestamp: new Date().toISOString()
+          }
+          setActiveSession(prev => prev ? { ...prev, chat_history: [...finalHistory, clarifyMsg] } : prev)
+          setOrchMessages([...newOrchMessages, { role: "assistant", content: JSON.stringify(orchResult) }])
+        } else if (orchResult.status === "dag_ready") {
+          // Update ReactFlow data
+          setReactFlowData(orchResult.react_flow)
+          
+          const planMsg: Message = {
+            role: 'agent_plan',
+            content: orchResult.message + "\n\n" + orchResult.summary.join("\n"),
+            timestamp: new Date().toISOString(),
+            dag: orchResult.react_flow
+          }
+          setActiveSession(prev => prev ? { ...prev, chat_history: [...finalHistory, planMsg] } : prev)
+          setOrchMessages([...newOrchMessages, { role: "assistant", content: JSON.stringify(orchResult) }])
+        } else if (orchResult.status === "confirm") {
+          const confirmMsg: Message = {
+            role: 'agent',
+            content: orchResult.message,
+            timestamp: new Date().toISOString(),
+            confirmCard: true
+          }
+          setActiveSession(prev => prev ? { ...prev, chat_history: [...finalHistory, confirmMsg] } : prev)
+        }
+      }
+
+      // Step 8: Save to database (only human + agent, no tool_connect cards)
       const dbHistory = [humanMsg, agentMsg]
       await fetch(`/api/chats/${activeSessionId}`, {
         method: 'PATCH',
@@ -237,5 +296,7 @@ export function useSessionManager() {
     deleteSession,
     sendMessage,
     updateWorkflow,
+    reactFlowData,
+    setReactFlowData,
   }
 }
