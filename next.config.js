@@ -1,7 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    appDir: true,
+  },
+  output: 'standalone',
   images: {
-    domains: ['localhost'],
+    domains: ['lh3.googleusercontent.com', 'avatars.githubusercontent.com'],
   },
 }
 
