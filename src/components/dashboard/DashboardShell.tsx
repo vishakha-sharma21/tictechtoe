@@ -1,13 +1,22 @@
 'use client'
 import { useSessionManager } from '@/hooks/useSessionManager'
-import { useEffect } from 'react'
+import { useSession } from 'next-auth/react'
+import { useEffect, useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import IconRail from './IconRail'
 import Sidebar from './Sidebar'
 import { ChatPanel } from './ChatPanel'
-import { CanvasPanel } from './CanvasPanel'
 import { DagPanel } from './DagPanel'
+import { IntegrationsSlideover } from './IntegrationsSlideover'
 
 export default function DashboardShell() {
+  const [integrationsOpen, setIntegrationsOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [chatOpen, setChatOpen] = useState(true)
+  const [dagOpen, setDagOpen] = useState(true)
+  const { data: authSession } = useSession()
+  const authUserId = authSession?.user?.userId || ''
+
   const {
     sessions,
     activeSessionId,
@@ -15,43 +24,62 @@ export default function DashboardShell() {
     isLoading,
     isSending,
     isCreating,
+    isExecuting,
+    awaitingConfirm,
     createSession,
     selectSession,
     deleteSession,
     sendMessage,
-    updateWorkflow,
     reactFlowData,
+    handleExecute,
   } = useSessionManager()
 
-  // Auto-retry logic for OAuth return
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const reconnect = params.get("reconnect")
-    const returnedSession = params.get("session_id")
+    const reconnect = params.get('reconnect')
+    const returnedSession = params.get('session_id')
 
-    if (reconnect === "true" && returnedSession) {
-      // Clean URL immediately
-      window.history.replaceState({}, "", "/dashboard")
+    if (reconnect === 'true' && returnedSession) {
+      window.history.replaceState({}, '', '/dashboard')
 
-      // Retrieve saved query
-      const lastQuery = localStorage.getItem("dagent_last_query")
-      const lastSession = localStorage.getItem("dagent_last_session")
+      const lastQuery = localStorage.getItem('dagent_last_query')
+      const lastSession = localStorage.getItem('dagent_last_session')
 
       if (lastQuery && lastSession) {
-        localStorage.removeItem("dagent_last_query")
-        localStorage.removeItem("dagent_last_session")
+        localStorage.removeItem('dagent_last_query')
+        localStorage.removeItem('dagent_last_session')
 
-        // Auto-fire the query again
         setTimeout(() => {
           sendMessage(lastQuery)
-        }, 1000) // Small delay to ensure session is loaded
+        }, 1000)
       }
     }
   }, [sendMessage])
 
+  const oauthSessionId = activeSession?.session_id || activeSessionId || 'integrations'
+
   return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
-      <IconRail />
+    <div className="flex h-screen overflow-hidden bg-bg-base text-text-primary">
+      <IconRail onOpenIntegrations={() => setIntegrationsOpen(true)} />
+      <IntegrationsSlideover
+        open={integrationsOpen}
+        onClose={() => setIntegrationsOpen(false)}
+        userId={authUserId || (activeSession as { user_id?: string } | null)?.user_id || ''}
+        sessionIdForOAuth={oauthSessionId}
+        authSession={authSession}
+      />
+
+      {!sidebarOpen && (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="w-6 shrink-0 flex items-center justify-center border-r border-border bg-bg-surface hover:bg-bg-elevated transition-all duration-300 ease-out text-text-secondary"
+          aria-label="Expand workflows panel"
+        >
+          <ChevronRight className="w-4 h-4" strokeWidth={1.75} />
+        </button>
+      )}
+
       <Sidebar
         sessions={sessions as any}
         activeId={activeSessionId}
@@ -59,17 +87,41 @@ export default function DashboardShell() {
         onNewSession={createSession}
         onDeleteSession={deleteSession}
         isCreating={isCreating}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen((v) => !v)}
       />
+
       <ChatPanel
         session={activeSession as any}
         isLoading={isLoading}
         isSending={isSending}
+        isExecuting={isExecuting}
         onSend={sendMessage}
-        onSendComplete={() => {
-          // Optional: Add any completion logic here
-        }}
+        onSendComplete={() => {}}
+        handleExecute={handleExecute}
+        awaitingConfirm={awaitingConfirm}
+        panelOpen={chatOpen}
+        onTogglePanel={() => setChatOpen((v) => !v)}
       />
-      <DagPanel reactFlowData={reactFlowData} />
+
+      {!dagOpen && (
+        <button
+          type="button"
+          onClick={() => setDagOpen(true)}
+          className="w-6 shrink-0 flex items-center justify-center border-l border-border bg-bg-surface hover:bg-bg-elevated transition-all duration-300 ease-out text-text-secondary"
+          aria-label="Expand DAG panel"
+        >
+          <ChevronLeft className="w-4 h-4" strokeWidth={1.75} />
+        </button>
+      )}
+
+      <DagPanel
+        reactFlowData={reactFlowData}
+        isExecuting={isExecuting}
+        chatSession={activeSession as any}
+        isOpen={dagOpen}
+        onToggle={() => setDagOpen((v) => !v)}
+      />
     </div>
   )
 }

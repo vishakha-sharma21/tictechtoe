@@ -8,11 +8,12 @@ export default auth((req) => {
   const { pathname } = req.nextUrl
 
   // Allow access to auth pages, homepage, and API routes
-  const publicPaths = ['/auth', '/']
-  const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
-  const isApiPath = pathname.startsWith('/api')
-
-  if (isPublicPath || isApiPath) {
+  const isPublicPath =
+    pathname === '/' ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/dag') ||
+    pathname.startsWith('/api')
+  if (isPublicPath) {
     return NextResponse.next()
   }
 

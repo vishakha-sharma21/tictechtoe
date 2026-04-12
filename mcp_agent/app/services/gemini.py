@@ -33,7 +33,7 @@ You are a tool detection system.
 
 Available tools:
 - github
-- google
+- google (includes google_drive, gmail, contacts)
 - gmail
 - google_drive
 
@@ -60,22 +60,43 @@ User query:
         text = response.choices[0].message.content.strip()
         print("🔍 GPT RAW OUTPUT:", text)
         text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
+        tools = json.loads(text)
+        
+        # Normalize tool names
+        normalized_tools = []
+        for tool in tools:
+            if tool == "google_drive":
+                normalized_tools.append("google")
+            elif tool == "gmail":
+                normalized_tools.append("google")
+            else:
+                normalized_tools.append(tool)
+        
+        return normalized_tools
     except Exception as e:
-        print("❌ GPT Error:", e)
+        print(" GPT Error:", e)
         return []
 
 
 # ── Check integrations ─────────────────────────────────────
 def get_missing_tools(user_id: str, required_tools: list):
-    missing = []
-    for tool in required_tools:
-        doc = integrations_col.find_one({
-            "user_id": user_id,
-            "provider": tool
-        })
-        if not doc or not doc.get("credentials", {}).get("access_token"):
-            missing.append(tool)
+    doc = integrations_col.find_one({ "user_id": user_id })
+    print(f"Looking for user_id: '{user_id}' -> found: {doc is not None}")
+    
+    if not doc:
+        print(f"No document found for user_id: {user_id}")
+        return required_tools
+
+    providers = doc.get("providers", [])
+    print(f"Providers in doc: {[p['provider'] for p in providers]}")
+    
+    connected_providers = [
+        p["provider"] for p in providers
+        if p.get("credentials", {}).get("access_token")
+    ]
+    print(f"Connected providers for {user_id}: {connected_providers}")
+
+    missing = [t for t in required_tools if t not in connected_providers]
     return missing
 
 

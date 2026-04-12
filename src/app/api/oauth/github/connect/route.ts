@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   
   const state = Buffer.from(JSON.stringify({ user_id, session_id })).toString("base64")
   
-  const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.GITHUB_REDIRECT_URI!)}&scope=repo%20read:user%20user:email&state=${state}` 
+  const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.GITHUB_REDIRECT_URI!)}&scope=repo%20delete_repo%20read:user%20user:email&state=${state}` 
   
   return Response.redirect(url)
 }

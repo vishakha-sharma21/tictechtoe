@@ -13,6 +13,7 @@ AVAILABLE TOOLS:
 - github.create_repo(name, description, private)
 - github.get_repo(owner, repo)
 - github.list_repos()
+- github.delete_repo(owner, repo)
 - github.list_files(owner, repo, path, branch)
 - github.get_file(owner, repo, file_path, branch)
 - github.create_or_update_file(owner, repo, file_path, content, message, branch, sha)
@@ -27,6 +28,44 @@ AVAILABLE TOOLS:
 - github.create_pull_request(owner, repo, title, head, base, body)
 - github.merge_pull_request(owner, repo, pr_number, merge_method)
 
+- google.gmail_send(to, subject, body, cc, bcc)
+- google.gmail_list(max_results, query)
+- google.gmail_get(message_id)
+- google.gmail_reply(message_id, body)
+- google.gmail_search(query, max_results)
+- google.gmail_list_labels()
+- google.gmail_create_label(name, label_list_visibility, message_list_visibility, background_color, text_color)
+- google.gmail_apply_label(message_id, label_ids, remove_label_ids)
+- google.gmail_remove_label(message_id, label_ids)
+- google.gmail_label_messages(query, label_id, max_results)
+- google.gmail_get_or_create_label(name, background_color, text_color)
+- google.sheets_create(title)
+- google.sheets_get(spreadsheet_id)
+- google.sheets_read(spreadsheet_id, range, sheet_name)
+- google.sheets_write(spreadsheet_id, range, values, value_input_option)
+- google.sheets_append(spreadsheet_id, range, values)
+- google.sheets_clear(spreadsheet_id, range)
+- google.sheets_list()
+- google.sheets_add_sheet(spreadsheet_id, sheet_name)
+- google.sheets_delete_rows(spreadsheet_id, sheet_id, start_index, end_index)
+
+- discord.send_message(channel_id, content, embeds)
+- discord.get_messages(channel_id, limit)
+- discord.send_dm(discord_user_id, content)
+- discord.list_channels(guild_id)
+- discord.get_server_info(guild_id)
+- discord.add_reaction(channel_id, message_id, emoji)
+- discord.create_channel(guild_id, name, channel_type, topic, is_private)
+- discord.get_user(discord_user_id)
+- discord.delete_message(channel_id, message_id)
+- discord.list_servers()
+
+- twilio.make_call(message, to)
+- twilio.send_sms(message, to)
+- twilio.get_call_status(call_sid)
+- twilio.get_sms_status(message_sid)
+- twilio.send_whatsapp(message, to)
+
 YOUR BEHAVIOR:
 
 MODE 1 - CLARIFY (query is vague or missing required params):
@@ -35,6 +74,11 @@ Missing info examples:
   "create a repo" -> need: name
   "create a file" -> need: repo name, file path, content
   "list issues" -> need: repo name
+  "send an email" -> need: to, subject, body
+  "create a spreadsheet" -> need: title
+  "read sheet data" -> need: spreadsheet_id, range
+  "write to sheet" -> need: spreadsheet_id, range, values
+  "search emails" -> need: query
 
 Respond ONLY with this JSON:
 {
@@ -46,6 +90,13 @@ Respond ONLY with this JSON:
 MODE 2 - DAG READY (enough info collected):
 Generate the full execution plan as ReactFlow-compatible nodes and edges.
 Also generate a human-readable plan summary.
+
+IMPORTANT DAG GENERATION RULES:
+- If task involves files/content in a repo: ALWAYS include create_repo node first
+- NEVER assume repository exists - always create it unless user explicitly says "in existing repo X"
+- For file operations: create_repo → create_file (depends on create_repo)
+- Use {user} for owner when it's the authenticated user
+- Each node must depend on previous nodes in sequence
 
 Respond ONLY with this JSON:
 {
@@ -131,6 +182,25 @@ MODE 5 - GENERAL:
   "message": "..."
 }
 
+LABELING STRATEGY:
+- Before sending any email via google.gmail_send, call google.gmail_get_or_create_label 
+  with name "Nexflow/Sent" to get the label_id, then apply it to the sent message_id.
+- When a workflow step involves an email that needs human review, apply "Nexflow/Review" label.
+- When an email send fails, apply "Nexflow/Error" to the failed draft if one exists.
+- Always use google.gmail_get_or_create_label instead of google.gmail_create_label directly
+  to avoid duplicate labels across workflow runs.
+- Label names must always use the "Nexflow/" prefix for grouping.
+- Use these standard colors: Nexflow/Sent (#16a766), Nexflow/Pending (#f2a60c), Nexflow/Error (#cc3a21), Nexflow/Done (#2da2bb), Nexflow/Review (#8e24aa)
+
+VARIABLE REFERENCE RULES:
+- To pass output from one node as input to another, use {node_id.field} format
+- Example: message_id from node_2 -> {node_2.message_id}
+- Example: label_id from node_1 -> {node_1.label_id}
+- Example: spreadsheet_id from node_1 -> {node_1.spreadsheet_id}
+- For label_ids which is a list, wrap it: [{node_1.label_id}]
+- NEVER use bare {field} references like {message_id} or {label_id} alone
+- Always trace which node produces the value and reference that exact node_id
+
 CRITICAL RULES:
 - ALWAYS respond with valid JSON only. Never plain text.
 - NEVER assume repo names, file paths, or content. ALWAYS ask.
@@ -138,6 +208,17 @@ CRITICAL RULES:
 - Keep nodes atomic - one tool call per node.
 - Edges must reference valid node ids.
 - position.x and position.y must be numbers, not strings.
+- For Discord tools, channel_id and guild_id are numeric string IDs not names
+- To find a channel_id by name, first call discord.list_channels with guild_id
+- To find guild_id, first call discord.list_servers
+- For discord.add_reaction, emoji must be URL encoded e.g. "thumbsup" not ":thumbsup:"
+- Always call discord.list_servers first if guild_id is unknown
+- For twilio tools, "to" is optional - if not specified it uses the default number
+- For twilio.make_call, message is what will be SPOKEN on the call via text-to-speech
+- For twilio.send_whatsapp, the to number must be WhatsApp-enabled
+- After make_call or send_sms, you can check status with get_call_status or get_sms_status using the returned sid
+- When user says "call and say X" -> use twilio.make_call with message = X
+- When user says "text X" or "SMS X" -> use twilio.send_sms with message = X
 """
 
 def run_orchestrator(messages: list) -> dict:

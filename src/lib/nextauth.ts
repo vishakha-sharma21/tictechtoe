@@ -1,11 +1,7 @@
 import NextAuth from 'next-auth'
 import Google from 'next-auth/providers/google'
-import { MongoDBAdapter } from '@auth/mongodb-adapter'
-import { clientPromise } from './mongodb'
-import { connectDB } from './connectDB'
-import { Integration } from './models/Integration'
 
-// NextAuth configuration with MongoDB adapter
+// NextAuth configuration with JWT strategy
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Google({
@@ -22,71 +18,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             'profile',
             'https://www.googleapis.com/auth/drive',
             'https://www.googleapis.com/auth/gmail.send',
+            'https://www.googleapis.com/auth/gmail.modify',      // ← add this
+  'https://www.googleapis.com/auth/gmail.labels',
             'https://www.googleapis.com/auth/contacts.readonly'
           ].join(' ')
         }
       }
     })
   ],
-  adapter: MongoDBAdapter(clientPromise),
   callbacks: {
     async signIn({ user, account, profile }) {
       // Log successful user creation
       if (user?.email) {
         console.log(`User signed in: ${user.email}`)
-      }
-      
-      // Non-blocking integrations sync
-      if (account?.provider && account?.providerAccountId) {
-        try {
-          // Run in background without blocking auth flow
-          setTimeout(async () => {
-            try {
-              await connectDB()
-              
-              const existingIntegration = await (Integration as any).findByProviderAccountId(account.providerAccountId)
-              
-              if (existingIntegration) {
-                // Update existing integration
-                await Integration.updateOne(
-                  { _id: existingIntegration._id },
-                  {
-                    $set: {
-                      'credentials.access_token': account.access_token,
-                      'credentials.refresh_token': account.refresh_token || null,
-                      'credentials.expires_at': account.expires_at || null,
-                      'credentials.scope': account.scope ? account.scope.split(' ') : [],
-                      updated_at: new Date()
-                    }
-                  }
-                )
-              } else {
-                // Create new integration
-                const nextUserId = await (Integration as any).getNextUserId()
-                await Integration.create({
-                  user_id: nextUserId,
-                  provider: account.provider,
-                  credentials: {
-                    access_token: account.access_token,
-                    refresh_token: account.refresh_token || null,
-                    expires_at: account.expires_at || null,
-                    token_type: 'bearer',
-                    scope: account.scope ? account.scope.split(' ') : []
-                  },
-                  meta: {
-                    provider_account_id: account.providerAccountId,
-                    email: user.email || '',
-                    name: user.name || ''
-                  }
-                })
-              }
-            } catch (error) {
-              console.error('Integration sync error:', error)
-            }
-          }, 0)
-        } catch (error) {
-          console.error('Integration sync setup error:', error)
-        }
       }
       
       return true
@@ -96,6 +40,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.id = token.sub ?? ''
         session.user.name = token.name ?? ''
         session.user.email = token.email ?? ''
+        // Use user_id from token
+        session.user.userId = token.userId as string | undefined
       }
       return session
     },
@@ -104,6 +50,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.sub = user.id
         token.name = user.name
         token.email = user.email
+        // Generate and store user_id for our system
+        if (user.email) {
+          token.userId = `u${user.email.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toLowerCase()}`
+        }
       }
       // Store OAuth tokens from account in JWT for API route processing
       if (account?.access_token) {
@@ -119,6 +69,43 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.scope = account.scope
       }
       return token
+    }
+  },
+  events: {
+    async signIn({ user, account, profile }) {
+      if (!account || !profile) return
+      
+      try {
+        // Get the user_id (u001 format) from integrations collection
+        // Find by email since we have it from Google profile
+        const response = await fetch("http://localhost:8010/integrations/upsert-by-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: profile.email,
+            provider: account.provider,  // "google"
+            credentials: {
+              access_token: account.access_token,
+              refresh_token: account.refresh_token ?? null,
+              expires_at: account.expires_at ?? null,
+              token_type: account.token_type ?? "bearer",
+              scope: account.scope 
+                ? account.scope.split(" ").map(s => s.trim())
+                : []
+            },
+            meta: {
+              provider_account_id: account.providerAccountId,
+              email: profile.email,
+              name: profile.name
+            }
+          })
+        })
+        const data = await response.json()
+        console.log("Google integration saved:", data)
+      } catch (err) {
+        console.error("Failed to save Google integration:", err)
+        // never block login
+      }
     }
   },
   pages: {

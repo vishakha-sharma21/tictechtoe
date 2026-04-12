@@ -35,7 +35,7 @@ ChatSchema.statics.getNextSessionId = async function(userId) {
 
 // Index for efficient queries
 ChatSchema.index({ user_id: 1, created_at: -1 })
-ChatSchema.index({ user_id: 1, session_id: 1 }, { unique: true })
+ChatSchema.index({ user_id: 1, session_id: 1 }) // Removed unique constraint
 
 export const Chat =
   mongoose.models.Chat || mongoose.model('Chat', ChatSchema)

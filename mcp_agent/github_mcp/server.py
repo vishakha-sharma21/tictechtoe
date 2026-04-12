@@ -9,6 +9,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# MongoDB setup
+mongo_client = MongoClient(os.environ["MONGODB_URI"])
+db = mongo_client["nexflow"]
+integrations_col = db["integrations"]
+
+def get_github_token(user_id: str) -> str:
+    doc = integrations_col.find_one({ "user_id": user_id })
+    if not doc:
+        raise ValueError(f"No integration found for user_id: {user_id}")
+    providers = doc.get("providers", [])
+    github = next((p for p in providers if p["provider"] == "github"), None)
+    if not github:
+        raise ValueError(f"No GitHub provider for user_id: {user_id}")
+    token = github["credentials"].get("access_token")
+    if not token:
+        raise ValueError(f"No GitHub access_token for user_id: {user_id}")
+    return token
+
 app = FastAPI()
 
 # GitHub API setup
@@ -18,38 +36,17 @@ GITHUB_HEADERS = {
     "X-GitHub-Api-Version": "2022-11-28",
 }
 
-# MongoDB setup
-MONGODB_URI = os.environ.get("MONGODB_URI")
-if not MONGODB_URI:
-    raise ValueError("MONGODB_URI environment variable is required")
-
-mongo_client = MongoClient(MONGODB_URI)
-db = mongo_client.get_database("nexflow")
-
 def get_github_token(user_id: str) -> str:
-    """Get GitHub access token from MongoDB integrations collection."""
-    integration = db.integrations.find_one({
-        "user_id": user_id
-    })
-    
-    if not integration:
+    doc = integrations_col.find_one({ "user_id": user_id })
+    if not doc:
         raise ValueError(f"No integration found for user_id: {user_id}")
-    
-    providers = integration.get("providers", [])
-    github_provider = None
-    
-    for provider in providers:
-        if provider.get("provider") == "github":
-            github_provider = provider
-            break
-    
-    if not github_provider:
-        raise ValueError(f"No GitHub provider found for user_id: {user_id}")
-    
-    token = github_provider.get("credentials", {}).get("access_token")
+    providers = doc.get("providers", [])
+    github = next((p for p in providers if p["provider"] == "github"), None)
+    if not github:
+        raise ValueError(f"No GitHub provider for user_id: {user_id}")
+    token = github["credentials"].get("access_token")
     if not token:
-        raise ValueError(f"No GitHub access token found for user_id: {user_id}")
-    
+        raise ValueError(f"No GitHub access_token for user_id: {user_id}")
     return token
 
 def make_github_request(user_id: str, method: str, endpoint: str, **kwargs):
@@ -73,6 +70,10 @@ def make_github_request(user_id: str, method: str, endpoint: str, **kwargs):
             elif response.status_code == 404:
                 error_msg = "GitHub resource not found"
             raise HTTPException(status_code=response.status_code, detail=error_msg)
+        
+        # Handle 204 No Content responses (e.g., successful repo deletion)
+        if response.status_code == 204:
+            return {"success": True, "message": "Operation successful"}
         
         return response.json()
 
@@ -348,8 +349,29 @@ def create_repo(req: CreateRepoRequest):
 @app.post("/invoke/github.delete_repo")
 def delete_repo(req: DeleteRepoRequest):
     try:
-        make_github_request(req.user_id, "DELETE", f"repos/{req.owner}/{req.repo}")
-        return {"result": {"deleted": True, "repo": req.repo}}
+        token = get_github_token(req.user_id)
+        headers = {
+            **GITHUB_HEADERS,
+            "Authorization": f"Bearer {token}",
+        }
+        
+        with httpx.Client() as client:
+            response = client.request("DELETE", f"{GITHUB_API_BASE}/repos/{req.owner}/{req.repo}", headers=headers)
+            
+            if response.status_code == 204:
+                return {"success": True, "message": "Repository deleted successfully"}
+            elif response.status_code == 403:
+                return {"error": "Insufficient permissions. Ensure delete_repo scope is granted."}
+            elif response.status_code == 404:
+                return {"error": "Repository not found or already deleted."}
+            elif response.status_code >= 400:
+                error_msg = f"GitHub API error {response.status_code}"
+                if response.status_code == 401:
+                    error_msg = "GitHub authentication failed"
+                raise HTTPException(status_code=response.status_code, detail=error_msg)
+            else:
+                return response.json()
+                
     except Exception as e:
         return {"error": str(e)}
 

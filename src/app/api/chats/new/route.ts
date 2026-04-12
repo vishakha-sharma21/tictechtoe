@@ -1,25 +1,18 @@
 import { auth } from '@/lib/nextauth'
 import { connectDB } from '@/lib/connectDB'
-import { Integration } from '@/lib/models/Integration'
 import { Chat } from '@/lib/models/Chat'
 import { NextResponse } from 'next/server'
 
 export async function POST() {
   const session = await auth()
-  if (!session?.user?.email) {
+  if (!session?.user?.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     await connectDB()
 
-    // Get user's integration to find user_id
-    const integration = await Integration.findOne({ 'meta.email': session.user.email })
-    if (!integration) {
-      return NextResponse.json({ error: 'User integration not found' }, { status: 404 })
-    }
-
-    const userId = integration.user_id
+    const userId = session.user.userId
 
     // Check for idempotency - if user created a chat in the last 2 seconds, return it
     const recentChat = await Chat.findOne({
@@ -35,13 +28,28 @@ export async function POST() {
       })
     }
 
-    // Get next session_id for this user
-    const nextSessionId = await (Chat as any).getNextSessionId(userId)
+    // Get next session_id for this user with duplicate protection
+    let session_id: string | undefined
+    let attempts = 0
+
+    while (attempts < 10) {
+      const candidate = `s${String(attempts + 1).padStart(3, '0')}`
+      const exists = await Chat.findOne({ user_id: userId, session_id: candidate })
+      if (!exists) {
+        session_id = candidate
+        break
+      }
+      attempts++
+    }
+
+    if (!session_id) {
+      return NextResponse.json({ error: 'Unable to generate unique session ID' }, { status: 500 })
+    }
 
     // Create new chat
     const newChat = await Chat.create({
       user_id: userId,
-      session_id: nextSessionId,
+      session_id: session_id,
       title: 'New workflow',
       query: '',
       chat_history: [],
@@ -50,7 +58,7 @@ export async function POST() {
     })
 
     return NextResponse.json({
-      _id: newChat._id,
+      _id: newChat._id.toString(),
       session_id: newChat.session_id
     })
 

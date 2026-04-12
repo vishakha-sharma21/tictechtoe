@@ -4,64 +4,58 @@ import React from 'react'
 import Link from 'next/link'
 import { useDispatch } from 'react-redux'
 import { Button } from './Button'
-import PillNav from './PillNav'
+import { ThemeToggle } from './ThemeToggle'
 import { openModal } from '@/store/authModalSlice'
 
 export function Nav() {
   const dispatch = useDispatch()
-  
-  const navItems = [
-    { label: 'home', href: '/' },
-    { label: 'recipes', href: '/recipes' },
-    { label: 'pricing', href: '/pricing' },
-    { label: 'docs', href: '/docs' }
+
+  const centerLinks = [
+    { label: 'Features', href: '#features' },
+    { label: 'How it works', href: '#how-it-works' },
+    { label: 'Docs', href: '/docs' },
+    { label: 'Pricing', href: '/pricing' },
   ]
 
   return (
-    <nav className="fixed top-6 left-0 right-0 h-14 bg-paper/80 backdrop-blur-md z-50">
-      <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-center">
-        <div className="flex items-center justify-between w-full max-w-4xl">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-6 h-6 bg-text-primary text-paper rounded flex items-center justify-center text-xs font-mono font-bold transition-transform duration-300 group-hover:scale-110">
-              dg
-            </div>
-            <span className="font-semibold text-text-primary transition-colors duration-300 group-hover:text-accent-blue">DAGent</span>
-          </Link>
-
-          {/* Center Navigation - PillNav */}
-          <div className="hidden md:flex flex-1 justify-center">
-            <PillNav 
-              items={navItems}
-              activeHref="/"
-              className="custom-nav"
-              ease="power2.easeOut"
-              baseColor="#ffffff"
-              pillColor="#000000"
-              hoveredPillTextColor="#000000"
-              pillTextColor="#ffffff"
-              initialLoadAnimation={false}
-            />
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-bg-base/75 backdrop-blur-xl">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+        <Link href="/" className="flex items-center gap-2 group shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-bg-elevated border border-border flex items-center justify-center text-[11px] font-mono font-bold text-accent transition-transform duration-200 group-hover:scale-[1.02]">
+            dg
           </div>
+          <span className="font-display text-lg text-text-primary tracking-tight">DAGent</span>
+        </Link>
 
-          {/* Right Actions */}
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="transition-all duration-300 hover:scale-105 hover:shadow-md"
-              onClick={() => dispatch(openModal('login'))}
+        <div className="hidden md:flex items-center justify-center flex-1 gap-8">
+          {centerLinks.map((item) => (
+            <Link
+              key={item.href + item.label}
+              href={item.href}
+              className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-200"
             >
-              Sign in
-            </Button>
-            <Button 
-              size="sm" 
-              className="transition-all duration-300 hover:scale-105 hover:shadow-lg"
-              onClick={() => dispatch(openModal('signup'))}
-            >
-              Get started
-            </Button>
-          </div>
+              {item.label}
+            </Link>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden sm:inline-flex"
+            onClick={() => dispatch(openModal('login'))}
+          >
+            Sign in
+          </Button>
+          <Button
+            size="sm"
+            className="hover:shadow-glow-sm"
+            onClick={() => dispatch(openModal('signup'))}
+          >
+            Get started <span aria-hidden>→</span>
+          </Button>
         </div>
       </div>
     </nav>

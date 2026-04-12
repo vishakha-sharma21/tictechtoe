@@ -1,78 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/nextauth'
-import { MongoClient } from 'mongodb'
 
-// MongoDB connection
-if (!process.env.MONGODB_URI) {
-  throw new Error('Invalid/Missing environment variable: "MONGODB_URI"')
-}
-
-let cachedClient: MongoClient | null = null
-
-async function connectToDatabase() {
-  if (cachedClient) {
-    return cachedClient
-  }
-
-  const client = new MongoClient(process.env.MONGODB_URI!)
-  await client.connect()
-  cachedClient = client
-  return client
-}
-
-// Sync user data to MongoDB after OAuth sign-in
+// Sync user data to Python backend after OAuth sign-in
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
     
-    if (!session?.user?.email) {
+    if (!session?.user?.email || !session?.user?.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
     const { accessToken, refreshToken, expiresAt, scope, tokenType } = body
 
-    const client = await connectToDatabase()
-    const db = client.db('dagent')
-    const now = new Date()
+    const userId = session.user.userId
 
-    // Store user data
-    await db.collection('users').replaceOne(
-      { _id: session.user.email } as any,
-      { 
-        _id: session.user.email,
-        email: session.user.email,
-        name: session.user.name,
-        image: session.user.image,
-        created_at: now,
-        updated_at: now
+    // Initialize user document in Python backend
+    const initResponse = await fetch('http://localhost:8010/integrations/init', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      { upsert: true }
-    )
+      body: JSON.stringify({
+        user_id: userId,
+        email: session.user.email
+      })
+    })
 
-    // Store integration data with OAuth credentials
+    if (!initResponse.ok) {
+      console.error('Failed to initialize user:', await initResponse.text())
+    }
+
+    // Store Google integration data with OAuth credentials
     if (accessToken) {
-      await db.collection('integrations').replaceOne(
-        { user_id: session.user.email, provider: 'google' },
-        { 
-          user_id: session.user.email,
+      const upsertResponse = await fetch('http://localhost:8010/integrations/upsert', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
           provider: 'google',
           credentials: {
             access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            scope: scope,
-            token_type: tokenType
+            refresh_token: refreshToken || null,
+            expires_at: expiresAt || null,
+            token_type: tokenType || 'bearer',
+            scope: scope ? scope.split(' ') : []
           },
           meta: {
+            provider_account_id: session.user.email, // Using email as provider account ID for Google
             email: session.user.email,
-            name: session.user.name || undefined
-          },
-          created_at: now,
-          updated_at: now
-        },
-        { upsert: true }
-      )
+            name: session.user.name || ''
+          }
+        })
+      })
+
+      if (!upsertResponse.ok) {
+        console.error('Failed to sync integration:', await upsertResponse.text())
+        return NextResponse.json(
+          { error: 'Failed to sync integration data' },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json({ success: true })

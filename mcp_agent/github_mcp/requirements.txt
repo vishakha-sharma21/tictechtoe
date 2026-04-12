@@ -4,3 +4,4 @@ httpx
 pymongo
 python-dotenv
 pydantic
+python-dotenv

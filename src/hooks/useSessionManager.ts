@@ -1,14 +1,15 @@
-'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { sanitizeNodes } from '@/lib/dagUtils'
 
 export interface Message {
-  role: 'human' | 'agent' | 'tool_connect' | 'agent_plan'
+  role: 'human' | 'agent' | 'tool_connect' | 'agent_plan' | 'card'
   content: string
   timestamp: string
   tool?: string
   id?: string
-  dag?: any
-  confirmCard?: boolean
+  type?: string
+  user_id?: string
+  session_id?: string
 }
 
 export interface ChatSession {
@@ -17,11 +18,12 @@ export interface ChatSession {
   title: string
   query: string
   chat_history: Message[]
-  react_flow: { nodes: any[]; edges: any[] }
-  completed: boolean
-  created_at: string
+  react_flow?: {
+    nodes: any[]
+    edges: any[]
+  }
+  completed?: boolean
   updated_at: string
-  missing_tools?: string[]
   user_id?: string
 }
 
@@ -32,69 +34,80 @@ export function useSessionManager() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
-  const [orchMessages, setOrchMessages] = useState<any[]>([])
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false)
+  const [isExecuting, setIsExecuting] = useState(false)
   const [reactFlowData, setReactFlowData] = useState<any>({ nodes: [], edges: [] })
-  const [isSendingMessage, setIsSendingMessage] = useState(false) // New flag
+  const [orchMessages, setOrchMessages] = useState<Array<{role: string, content: string}>>([])
+
+  // Append message helper
+  const appendMessage = useCallback((message: Message) => {
+    setActiveSession(prev => {
+      if (!prev) return prev
+      const newHistory = [...prev.chat_history, { ...message, timestamp: new Date().toISOString() }]
+      return { ...prev, chat_history: newHistory }
+    })
+  }, [])
 
   // Load sidebar session list
   const loadSessions = useCallback(async () => {
-    const res = await fetch('/api/chats')
-    const data = await res.json()
-    setSessions(data.chats ?? [])
-    // Auto-select first session or create one if none exist
-    if (data.chats?.length > 0) {
-      selectSession(data.chats[0]._id)
-    } else {
-      createSession()
+    try {
+      const res = await fetch('/api/chats')
+      const data = await res.json()
+      setSessions(data.chats ?? [])
+      if (data.chats?.length > 0) {
+        selectSession(data.chats[0]._id)
+      } else {
+        await createSession()
+      }
+    } catch (error) {
+      console.error('Error loading sessions:', error)
     }
   }, [])
 
-  // Load a single session's full data
-  const selectSession = useCallback(async (id: string) => {
-    setActiveSessionId(id)
-    setIsLoading(true)
-    const res = await fetch(`/api/chats/${id}`)
-    const data = await res.json()
-    // Don't overwrite if we're in the middle of sending a message
-    if (!isSendingMessage) {
-      setActiveSession(data)
-    }
-    setIsLoading(false)
-  }, [isSendingMessage])
-
-  // Create a new session
+  // Create new session
   const createSession = useCallback(async () => {
-    if (isCreating) return // Prevent duplicate calls
     setIsCreating(true)
-    
     try {
       const res = await fetch('/api/chats/new', { method: 'POST' })
       const data = await res.json()
-      
-      // Load the full session data
-      await selectSession(data._id)
-      // Refresh the sessions list
-      await loadSessions()
+      const newSession = data.chat
+      setSessions(prev => [newSession, ...prev])
+      selectSession(newSession._id)
+      setOrchMessages([])
     } catch (error) {
       console.error('Error creating session:', error)
     } finally {
       setIsCreating(false)
     }
-  }, [isCreating, loadSessions, selectSession])
+  }, [])
 
-  // Delete a session
-  const deleteSession = useCallback(async (id: string) => {
+  // Select session by ID
+  const selectSession = useCallback(async (sessionId: string) => {
+    setActiveSessionId(sessionId)
     try {
-      await fetch(`/api/chats/${id}`, { method: 'DELETE' })
-      
-      // Remove from local state
-      setSessions(prev => prev.filter(s => s._id !== id))
-      
-      // If deleting active session, select another or create new one
-      if (activeSessionId === id) {
-        const remainingSessions = sessions.filter(s => s._id !== id)
-        if (remainingSessions.length > 0) {
-          await selectSession(remainingSessions[0]._id)
+      const res = await fetch(`/api/chats/${sessionId}`)
+      const data = await res.json()
+      setActiveSession(data.chat)
+      if (data.chat?.react_flow) {
+        setReactFlowData({
+          nodes: sanitizeNodes(data.chat.react_flow.nodes || []),
+          edges: data.chat.react_flow.edges || []
+        })
+      }
+    } catch (error) {
+      console.error('Error loading session:', error)
+    }
+  }, [])
+
+  // Delete session
+  const deleteSession = useCallback(async (sessionId: string) => {
+    try {
+      await fetch(`/api/chats/${sessionId}`, { method: 'DELETE' })
+      setSessions(prev => prev.filter(s => s._id !== sessionId))
+      if (activeSessionId === sessionId) {
+        const remaining = sessions.filter(s => s._id !== sessionId)
+        if (remaining.length > 0) {
+          selectSession(remaining[0]._id)
         } else {
           await createSession()
         }
@@ -104,174 +117,293 @@ export function useSessionManager() {
     }
   }, [activeSessionId, sessions, selectSession, createSession])
 
-  // Send a message - calls process-query API and handles missing integrations
-  const sendMessage = useCallback(async (content: string) => {
+  // Execute DAG
+  const handleExecute = useCallback(async () => {
     if (!activeSessionId) return
-    
+
+    setIsExecuting(true)
     try {
-      setIsSending(true)
-      setIsSendingMessage(true)
+      // Set all nodes to yellow (running) immediately
+      setReactFlowData((prev: any) => ({
+        ...prev,
+        nodes: prev.nodes.map((node: any) => ({
+          ...node,
+          style: {
+            background: '#eab308',
+            color: 'white',
+            border: '2px solid transparent',
+            borderRadius: '8px'
+          }
+        }))
+      }))
 
-      // Step 1: Get current history and append human message immediately
-      const currentHistory = activeSession?.chat_history || []
-      const humanMsg: Message = { role: 'human', content, timestamp: new Date().toISOString() }
-      const withHuman = [...currentHistory, humanMsg]
-      
-      // Update state with human message
-      setActiveSession(prev => prev ? { ...prev, chat_history: withHuman } : prev)
+      const sessionRes = await fetch('/api/auth/session')
+      const sessionData = await sessionRes.json()
+      const userId = sessionData?.user?.userId || 'unknown'
 
-      // Step 2: Save to localStorage for OAuth retry
-      localStorage.setItem("dagent_last_query", content)
-      localStorage.setItem("dagent_last_session", activeSessionId)
-
-      // Step 3: Call API
-      // Get user_id from session
-      const session = await fetch('/api/auth/session').then(res => res.json())
-      const userId = session?.user?.userId || 'unknown'
-      
-      const res = await fetch("http://127.0.0.1:8001/process-query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          user_id: userId,
-          session_id: activeSessionId, 
-          query: content 
-        })
+      const res = await fetch('http://localhost:8010/execute-dag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, session_id: activeSessionId })
       })
       const data = await res.json()
 
-      // Step 4: Build agent message
-      let agentContent = ''
-      if (data.status === "ready") {
-        agentContent = "All tools connected. Processing your request..."
-      } else if (data.status === "missing_integrations") {
-        const toolNames = data.missing_tools.join(", ")
-        agentContent = `I need access to: ${toolNames}. Please connect them below to continue.`
+      if (data.status === 'error') {
+        appendMessage({
+          role: 'agent',
+          content: `❌ ${data.message}`,
+          timestamp: new Date().toISOString()
+        })
+        return
       }
 
-      const agentMsg: Message = { role: 'agent', content: agentContent, timestamp: new Date().toISOString() }
-      const withBoth = [...withHuman, agentMsg]
+      // Show each result line with delay
+      if (data.summary) {
+        for (const line of data.summary) {
+          appendMessage({
+            role: 'agent',
+            content: line,
+            timestamp: new Date().toISOString()
+          })
+          await new Promise(r => setTimeout(r, 400))
+        }
+      }
 
-      // Step 5: Handle missing integrations and add tool_connect cards
-      let finalHistory = [...withBoth]
-      if (data.status === "missing_integrations") {
-        // Store missing tools in session
-        setActiveSession(prev => prev ? { 
-          ...prev, 
-          missing_tools: data.missing_tools,
-          user_id: userId
-        } : prev)
+      // Final message
+      appendMessage({
+        role: 'agent',
+        content: data.completed
+          ? '🎉 Workflow completed successfully!'
+          : '⚠️ Workflow finished with some errors. Check above for details.',
+        timestamp: new Date().toISOString()
+      })
 
-        // Add tool_connect cards for each missing tool
-        data.missing_tools.forEach((tool: string) => {
-          if (tool === 'github') {
-            const connectMsg: Message = {
-              role: 'tool_connect',
-              content: '',
-              tool: 'github',
-              id: Date.now().toString(),
-              timestamp: new Date().toISOString()
-            }
-            finalHistory = [...finalHistory, connectMsg]
+      // Update DAG node colors
+      if (data.updated_nodes) {
+        setReactFlowData((prev: any) => ({
+          ...prev,
+          nodes: sanitizeNodes(data.updated_nodes || [])
+        }))
+      }
+
+    } catch (err) {
+      appendMessage({
+        role: 'agent',
+        content: '❌ Execution failed. Make sure the backend is running.',
+        timestamp: new Date().toISOString()
+      })
+      console.error('Execute error:', err)
+    } finally {
+      setIsExecuting(false)
+    }
+  }, [activeSessionId, appendMessage])
+
+  // Send message
+  const sendMessage = useCallback(async (content: string) => {
+    if (!activeSessionId) return
+
+    try {
+      setIsSending(true)
+
+      const sessionRes = await fetch('/api/auth/session')
+      const sessionData = await sessionRes.json()
+      const userId = sessionData?.user?.userId || 'unknown'
+
+      // Detect confirmation words
+      const CONFIRM_WORDS = ['yes', 'proceed', 'execute', 'go ahead',
+        'do it', 'confirm', 'run it', 'yes please', 'sure', 'ok', 'yep', 'yeah']
+      const userIsConfirming = CONFIRM_WORDS.some(w =>
+        content.trim().toLowerCase().includes(w)
+      )
+
+      // If awaiting confirm and user says yes → execute
+      if (awaitingConfirm && userIsConfirming) {
+        appendMessage({ role: 'human', content, timestamp: new Date().toISOString() })
+        appendMessage({
+          role: 'agent',
+          content: '⚙️ Starting execution...',
+          timestamp: new Date().toISOString()
+        })
+        setAwaitingConfirm(false)
+        // Remove execute_confirm cards
+        setActiveSession(prev => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            chat_history: prev.chat_history.filter(m => m.type !== 'execute_confirm')
           }
         })
+        await handleExecute()
+        return
       }
 
-      // Step 6: Update UI with final state (include tool_connect cards)
-      setActiveSession(prev => prev ? { ...prev, chat_history: finalHistory } : prev)
+      // If awaiting confirm but user wants changes → reset and continue to orchestrate
+      if (awaitingConfirm && !userIsConfirming) {
+        setAwaitingConfirm(false)
+      }
 
-      // Step 7: Handle orchestration if tools are ready
-      if (data.status === "ready") {
-        // Add user message to orchestration history
-        const newOrchMessages = [...orchMessages, { role: "user", content }]
+      // Append human message to chat
+      appendMessage({ role: 'human', content, timestamp: new Date().toISOString() })
+
+      // Check for missing integrations first
+      const processRes = await fetch('http://localhost:8010/process-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          session_id: activeSessionId,
+          query: content
+        })
+      })
+      const processData = await processRes.json()
+      console.log('📡 process-query response:', processData)
+
+      // CASE 1: Tools missing → show connect cards
+      if (processData.status === 'missing_integrations') {
+        const agentMsg = `I need access to: ${processData.missing_tools.join(', ')}. Please connect them below to continue.`
+        appendMessage({ role: 'agent', content: agentMsg, timestamp: new Date().toISOString() })
+
+        // Save to DB
+        await fetch('/api/chats/append', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            session_id: activeSessionId,
+            messages: [
+              { role: 'human', content },
+              { role: 'agent', content: agentMsg }
+            ]
+          })
+        })
+
+        // Show connect card for each missing tool
+        processData.missing_tools.forEach((tool: string) => {
+          if (tool === 'github') {
+            appendMessage({
+              id: `connect_github_${Date.now()}`,
+              type: 'tool_connect',
+              role: 'card',
+              tool: 'github',
+              content: 'Connect GitHub to access repositories',
+              user_id: userId,
+              session_id: activeSessionId,
+              timestamp: new Date().toISOString()
+            })
+          }
+        })
+
+        // Save for auto-retry after OAuth
+        localStorage.setItem('dagent_last_query', content)
+        localStorage.setItem('dagent_last_session', activeSessionId)
+        localStorage.setItem('dagent_user_id', userId)
+
+        return
+      }
+
+      // CASE 2: All tools ready → call orchestrate
+      if (processData.status === 'ready') {
+        const newOrchMessages = [...orchMessages, { role: 'user', content }]
         setOrchMessages(newOrchMessages)
-        
-        // Call orchestration API
-        const orchRes = await fetch("http://127.0.0.1:8001/orchestrate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+
+        const orchRes = await fetch('http://localhost:8010/orchestrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId,
             session_id: activeSessionId,
             messages: newOrchMessages
           })
         })
-        
-        const orchResult = await orchRes.json()
-        
-        // Handle orchestration response
-        if (orchResult.status === "clarify") {
-          const clarifyMsg: Message = {
+
+        const orchData = await orchRes.json()
+        console.log('🤖 Orchestrator response:', orchData)
+
+        // Append agent response to orch history
+        setOrchMessages(prev => [...prev, {
+          role: 'assistant',
+          content: JSON.stringify(orchData)
+        }])
+
+        let agentContent = ''
+
+        if (orchData.status === 'clarify') {
+          agentContent = orchData.question
+          appendMessage({
             role: 'agent',
-            content: orchResult.question,
+            content: orchData.question,
             timestamp: new Date().toISOString()
-          }
-          setActiveSession(prev => prev ? { ...prev, chat_history: [...finalHistory, clarifyMsg] } : prev)
-          setOrchMessages([...newOrchMessages, { role: "assistant", content: JSON.stringify(orchResult) }])
-        } else if (orchResult.status === "dag_ready") {
-          // Update ReactFlow data
-          setReactFlowData(orchResult.react_flow)
-          
-          const planMsg: Message = {
-            role: 'agent_plan',
-            content: orchResult.message + "\n\n" + orchResult.summary.join("\n"),
-            timestamp: new Date().toISOString(),
-            dag: orchResult.react_flow
-          }
-          setActiveSession(prev => prev ? { ...prev, chat_history: [...finalHistory, planMsg] } : prev)
-          setOrchMessages([...newOrchMessages, { role: "assistant", content: JSON.stringify(orchResult) }])
-        } else if (orchResult.status === "confirm") {
-          const confirmMsg: Message = {
-            role: 'agent',
-            content: orchResult.message,
-            timestamp: new Date().toISOString(),
-            confirmCard: true
-          }
-          setActiveSession(prev => prev ? { ...prev, chat_history: [...finalHistory, confirmMsg] } : prev)
+          })
         }
+
+        if (orchData.status === 'dag_ready') {
+          agentContent = orchData.message
+          appendMessage({ role: 'agent', content: orchData.message, timestamp: new Date().toISOString() })
+          if (orchData.summary) {
+            const planText = '📋 Plan:\n' + orchData.summary.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')
+            appendMessage({ role: 'agent', content: planText, timestamp: new Date().toISOString() })
+            agentContent = orchData.message + '\n' + planText
+          }
+          if (orchData.react_flow) {
+            setReactFlowData({
+              nodes: sanitizeNodes(orchData.react_flow.nodes || []),
+              edges: orchData.react_flow.edges || []
+            })
+          }
+          setAwaitingConfirm(false)
+        }
+
+        if (orchData.status === 'confirm') {
+          agentContent = orchData.message
+          setAwaitingConfirm(true)
+          appendMessage({ role: 'agent', content: orchData.message, timestamp: new Date().toISOString() })
+          // Add execute confirm card
+          setActiveSession(prev => {
+            if (!prev) return prev
+            const newHistory = [...prev.chat_history, {
+              id: `confirm_${Date.now()}`,
+              type: 'execute_confirm',
+              role: 'card' as const,
+              content: '',
+              timestamp: new Date().toISOString()
+            }]
+            return { ...prev, chat_history: newHistory }
+          })
+        }
+
+        if (orchData.status === 'message') {
+          agentContent = orchData.message
+          appendMessage({ role: 'agent', content: orchData.message, timestamp: new Date().toISOString() })
+        }
+
+        // Save both messages to DB
+        await fetch('/api/chats/append', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            session_id: activeSessionId,
+            messages: [
+              { role: 'human', content },
+              { role: 'agent', content: agentContent }
+            ]
+          })
+        })
       }
-
-      // Step 8: Save to database (only human + agent, no tool_connect cards)
-      const dbHistory = [humanMsg, agentMsg]
-      await fetch(`/api/chats/${activeSessionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          query: content,
-          chat_history: dbHistory
-        }),
-      })
-
-      // Step 8: Refresh sidebar list
-      setSessions(prev => prev.map(s =>
-        s._id === activeSessionId
-          ? { ...s, updated_at: new Date().toISOString() }
-          : s
-      ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
 
     } catch (error) {
       console.error('Error in sendMessage:', error)
-      
-      // Add error message to chat
-      const errorMsg: Message = { 
-        role: 'agent', 
-        content: "Sorry, I had trouble processing your request. Please try again.", 
-        timestamp: new Date().toISOString() 
-      }
-      
-      setActiveSession(prev => prev ? {
-        ...prev,
-        chat_history: [...(prev?.chat_history || []), errorMsg]
-      } : prev)
-      
+      appendMessage({
+        role: 'agent',
+        content: `❌ ${(error as Error).message}`,
+        timestamp: new Date().toISOString()
+      })
     } finally {
-      // ALWAYS reset sending flags
       setIsSending(false)
-      setIsSendingMessage(false)
     }
-  }, [activeSessionId, activeSession])
+  }, [activeSessionId, awaitingConfirm, orchMessages, handleExecute, appendMessage])
 
-  // Update workflow in DB
+  // Update workflow
   const updateWorkflow = useCallback(async (nodes: any[], edges: any[]) => {
     if (!activeSessionId) return
     await fetch(`/api/chats/${activeSessionId}`, {
@@ -286,17 +418,19 @@ export function useSessionManager() {
 
   return {
     sessions,
-    activeSession,
     activeSessionId,
+    activeSession,
     isLoading,
     isSending,
     isCreating,
+    isExecuting,
+    awaitingConfirm,
+    reactFlowData,
     createSession,
     selectSession,
     deleteSession,
     sendMessage,
     updateWorkflow,
-    reactFlowData,
-    setReactFlowData,
+    handleExecute,
   }
 }

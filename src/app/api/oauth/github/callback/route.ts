@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Check if GitHub integration already exists to prevent duplicates
-  const existingCheck = await fetch("http://127.0.0.1:8001/integrations/check", {
+  const existingCheck = await fetch("http://localhost:8010/integrations/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id, provider: "github" })
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
 
   console.log("Saving integration:", integrationDoc)
 
-  const saveRes = await fetch("http://127.0.0.1:8001/integrations/upsert", {
+  const saveRes = await fetch('http://localhost:8010/integrations/upsert', {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(integrationDoc)

@@ -1,129 +1,143 @@
 'use client'
 
 import React from 'react'
-import { mockTools } from '@/lib/mock-data'
-import { Button } from '@/components/shared/Button'
-import { useIntersectionObserver } from '@/hooks/useIntersectionObserver'
 
-// Separate component for the logo to handle error events
-function LogoImage({ src, alt, fallback }: { src: string; alt: string; fallback: string }) {
-  const [hasError, setHasError] = React.useState(false)
+const LOGO_ITEMS: { id: string; label: string; svg: React.ReactNode }[] = [
+  {
+    id: 'github',
+    label: 'GitHub',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'slack',
+    label: 'Slack',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'drive',
+    label: 'Drive',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M6.28 3h11.44l3.3 5.716-5.72 9.9H2.98L6.28 3zm5.72 0L8.72 8.716l5.72 9.9h5.72L16.44 8.716 12 3zm-5.72 9.9L3 18.716h18l-3.28-5.716H6.28z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'notion',
+    label: 'Notion',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'jira',
+    label: 'Jira',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.762a1.005 1.005 0 0 0-1.001-1.005zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24.019 12.49V1.005A1.005 1.005 0 0 0 23.013 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'discord',
+    label: 'Discord',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.054a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'twilio',
+    label: 'Twilio',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 20.4c-4.638 0-8.4-3.762-8.4-8.4S7.362 3.6 12 3.6s8.4 3.762 8.4 8.4-3.762 8.4-8.4 8.4zm3.6-10.8a1.8 1.8 0 1 1-3.601 0 1.8 1.8 0 0 1 3.601 0zm0 5.4a1.8 1.8 0 1 1-3.601 0 1.8 1.8 0 0 1 3.601 0zm-5.4-5.4a1.8 1.8 0 1 1-3.601 0 1.8 1.8 0 0 1 3.601 0zm0 5.4a1.8 1.8 0 1 1-3.601 0 1.8 1.8 0 0 1 3.601 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'stripe',
+    label: 'Stripe',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.594-7.305h.003z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'linear',
+    label: 'Linear',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M0 14.4L9.6 24l2.4-2.4L2.4 12 0 14.4zM0 9.6L14.4 24l2.4-2.4L2.4 7.2 0 9.6zM4.8 0L24 19.2l-2.4 2.4L2.4 2.4 4.8 0zM9.6 0L24 14.4l-2.4 2.4L7.2 2.4 9.6 0zM14.4 0L24 9.6l-2.4 2.4L12 2.4 14.4 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'sentry',
+    label: 'Sentry',
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+        <path d="M14.493 0a1.45 1.45 0 0 0-1.25.71L.544 21.573A1.45 1.45 0 0 0 1.794 24h4.412c.028 0 .054-.008.08-.01A11.73 11.73 0 0 1 5.09 18c0-6.498 5.284-11.77 11.806-11.77.643 0 1.274.054 1.892.148L21.47 2.574A1.449 1.449 0 0 0 20.22.002L14.493 0zm2.497 9.887C11.244 9.887 6.93 14.19 6.93 19.47c0 1.548.37 3.01 1.028 4.307.044.088.09.176.138.263h8.657a.73.73 0 0 0 .724-.618l.428-2.804a8.596 8.596 0 0 1-4.26-1.265l1.687-1.686c.93.495 1.987.776 3.11.776.46 0 .906-.05 1.337-.143l.429-2.817a5.784 5.784 0 0 1-3.248-1.503l1.697-1.696a2.88 2.88 0 0 0 2.096.887c.278 0 .544-.04.797-.112l.42-2.75a8.545 8.545 0 0 0-5.58-1.221z" />
+      </svg>
+    ),
+  },
+]
 
-  if (hasError) {
-    return <div className="text-2xl font-bold text-text-primary">{fallback}</div>
-  }
+const LOOP = [...LOGO_ITEMS, ...LOGO_ITEMS]
 
+function MarqueeItem({ label, svg }: { label: string; svg: React.ReactNode }) {
   return (
-    <img 
-      src={src} 
-      alt={alt}
-      className="w-10 h-10 object-contain transition-all duration-300"
-      onError={() => setHasError(true)}
-    />
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '0 32px',
+      }}
+    >
+      <div style={{ width: '36px', height: '36px', color: 'var(--text-secondary)' }}>{svg}</div>
+      <span
+        style={{
+          fontSize: '12px',
+          color: 'var(--text-faint)',
+          fontFamily: 'var(--font-mono), monospace',
+        }}
+      >
+        {label}
+      </span>
+    </div>
   )
 }
 
 export function Marquee() {
-  // Create two sets for seamless circular loop
-  const duplicatedTools = [...mockTools, ...mockTools]
-  
-  // Intersection Observer refs for different elements
-  const [headerRef, headerVisible] = useIntersectionObserver({ threshold: 0.1 })
-  const [marqueeRef, marqueeVisible] = useIntersectionObserver({ threshold: 0.1 })
-
   return (
-    <section className="py-16 overflow-hidden relative">
-      {/* Gradient fade edges */}
-      <div className="absolute left-0 top-0 bottom-0 w-96 bg-gradient-to-r from-surface to-transparent z-20" />
-      <div className="absolute right-0 top-0 bottom-0 w-96 bg-gradient-to-l from-surface to-transparent z-20" />
-      
-      {/* Section title */}
-      <div 
-        ref={headerRef}
-        className={`text-center mb-12 transition-all duration-700 ease-out ${
-          headerVisible 
-            ? 'opacity-100 translate-y-0' 
-            : 'opacity-0 -translate-y-6'
-        }`}
-      >
-        <h2 className="text-5xl font-serif text-text-primary mb-4">
-          Seamlessly connect everything 
-          <br />
-          you use
-        </h2>
-        <p className="text-2xl text-text-secondary max-w-2xl mx-auto mb-8">
-          Works with all your favorite tools. VSCode, Cursor, Claude, and more.
-        </p>
-      </div>
-
-      {/* Marquee container - true circular loop */}
-      <div 
-        ref={marqueeRef}
-        className={`relative max-w-4xl mx-auto overflow-hidden transition-all duration-700 ease-out delay-200 ${
-          marqueeVisible 
-            ? 'opacity-100 translate-y-0' 
-            : 'opacity-0 translate-y-8'
-        }`}
-      >
-        <div className="flex animate-marquee">
-          {/* First set */}
-          {mockTools.map((tool, index) => (
-            <React.Fragment key={`${tool.id}-first`}>
-              <div className="flex flex-col items-center gap-2 px-6 group cursor-pointer flex-shrink-0">
-                {/* App logo with enhanced hover effect */}
-                <div className="relative">
-                  <div className="w-20 h-20 bg-white border border-border rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-all duration-300 group-hover:scale-110">
-                    <LogoImage 
-                      src={tool.icon} 
-                      alt={tool.name}
-                      fallback={tool.name.charAt(0)}
-                    />
-                  </div>
-                  {/* Enhanced glow on hover */}
-                  <div className="absolute inset-0 bg-text-primary/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-md" />
-                </div>
-                
-                {/* App name below logo */}
-                <span className="text-base font-semibold text-text-primary group-hover:text-text-primary transition-colors text-center whitespace-nowrap">
-                  {tool.name}
-                </span>
-              </div>
-              
-              {/* Minimal separator */}
-              <div className="w-px h-8 bg-border/20 mx-2 flex-shrink-0" />
-            </React.Fragment>
-          ))}
-          
-          {/* Second set - exact duplicate for seamless loop */}
-          {mockTools.map((tool, index) => (
-            <React.Fragment key={`${tool.id}-second`}>
-              <div className="flex flex-col items-center gap-2 px-6 group cursor-pointer flex-shrink-0">
-                {/* App logo with enhanced hover effect */}
-                <div className="relative">
-                  <div className="w-20 h-20 bg-white border border-border rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-all duration-300 group-hover:scale-110">
-                    <LogoImage 
-                      src={tool.icon} 
-                      alt={tool.name}
-                      fallback={tool.name.charAt(0)}
-                    />
-                  </div>
-                  {/* Enhanced glow on hover */}
-                  <div className="absolute inset-0 bg-text-primary/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-md" />
-                </div>
-                
-                {/* App name below logo */}
-                <span className="text-base font-semibold text-text-primary group-hover:text-text-primary transition-colors text-center whitespace-nowrap">
-                  {tool.name}
-                </span>
-              </div>
-              
-              {/* Minimal separator */}
-              {index < mockTools.length - 1 && (
-                <div className="w-px h-8 bg-border/20 mx-2 flex-shrink-0" />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
+    <section className="border-y border-border bg-bg-surface py-6 overflow-hidden">
+      <div className="flex whitespace-nowrap animate-marquee">
+        {LOOP.map((item, i) => (
+          <MarqueeItem key={`${item.id}-${i}`} label={item.label} svg={item.svg} />
+        ))}
       </div>
     </section>
   )

@@ -1,0 +1,91 @@
+
+services:
+
+  mcp_agent:
+    build:
+      context: ./mcp_agent
+      dockerfile: Dockerfile
+    container_name: mcp_agent
+    ports:
+      - "8010:8010"
+    env_file:
+      - ./mcp_agent/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./mcp_agent:/app
+    networks:
+      - dagent_network
+    restart: unless-stopped
+
+  github_mcp:
+    build:
+      context: ./mcp_agent/github_mcp
+      dockerfile: Dockerfile
+    container_name: github_mcp
+    ports:
+      - "8020:8020"
+    env_file:
+      - ./mcp_agent/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./mcp_agent/github_mcp:/app
+    networks:
+      - dagent_network
+    restart: unless-stopped
+
+  google_mcp:
+    build:
+      context: ./mcp_agent/google_mcp
+      dockerfile: Dockerfile
+    container_name: google_mcp
+    ports:
+      - "8030:8030"
+    env_file:
+      - ./mcp_agent/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./mcp_agent/google_mcp:/app
+    networks:
+      - dagent_network
+    restart: unless-stopped
+
+  discord_mcp:
+    build:
+      context: ./mcp_agent/discord_mcp
+      dockerfile: Dockerfile
+    container_name: discord_mcp
+    ports:
+      - "8040:8040"
+    env_file:
+      - ./mcp_agent/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./mcp_agent/discord_mcp:/app
+    networks:
+      - dagent_network
+    restart: unless-stopped
+
+  twilio_mcp:
+    build:
+      context: ./mcp_agent/twilio_mcp
+      dockerfile: Dockerfile
+    container_name: twilio_mcp
+    ports:
+      - "8050:8050"
+    env_file:
+      - ./mcp_agent/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./mcp_agent/twilio_mcp:/app
+    networks:
+      - dagent_network
+    restart: unless-stopped
+
+networks:
+  dagent_network:
+    driver: bridge

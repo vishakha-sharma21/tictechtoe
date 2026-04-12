@@ -11,22 +11,21 @@ export function ConnectToolCard({ tool, user_id, session_id }: ConnectToolCardPr
     if (tool === 'github') {
       window.location.href = `/api/oauth/github/connect?user_id=${user_id}&session_id=${session_id}`
     }
-    // Add other tools here as needed
   }
 
   const getToolInfo = (toolName: string) => {
     switch (toolName) {
       case 'github':
         return {
-          icon: '???',
-          name: 'Connect GitHub',
-          scopes: 'repo, read:user, user:email'
+          icon: '🐙',
+          name: 'GitHub',
+          scopes: 'repo, read:user, user:email',
         }
       default:
         return {
-          icon: '?',
-          name: `Connect ${toolName}`,
-          scopes: 'Required permissions'
+          icon: '🔌',
+          name: toolName,
+          scopes: 'Required permissions',
         }
     }
   }
@@ -34,19 +33,18 @@ export function ConnectToolCard({ tool, user_id, session_id }: ConnectToolCardPr
   const toolInfo = getToolInfo(tool)
 
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 my-2 max-w-sm">
+    <div className="rounded-large-card border border-border bg-bg-elevated p-4 animate-slide-in w-full max-w-md">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xl">{toolInfo.icon}</span>
-        <span className="text-white font-medium">{toolInfo.name}</span>
+        <span className="text-text-primary font-medium">Connect {toolInfo.name}</span>
       </div>
-      <p className="text-gray-400 text-sm mb-3">
-        Required: {toolInfo.scopes}
-      </p>
+      <p className="text-text-secondary text-xs mb-3 font-mono">Required: {toolInfo.scopes}</p>
       <button
+        type="button"
         onClick={handleConnect}
-        className="w-full bg-gray-800 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
+        className="w-full bg-accent text-white font-medium py-2.5 px-4 rounded-lg text-sm hover:scale-[1.02] transition-transform duration-200"
       >
-        Connect {tool.charAt(0).toUpperCase() + tool.slice(1)} ?
+        Connect {tool.charAt(0).toUpperCase() + tool.slice(1)} →
       </button>
     </div>
   )

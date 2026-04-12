@@ -6,45 +6,54 @@ const mockLogs = [
   { timestamp: '14:32:10.189', level: 'OK', message: 'parse_prompt: Completed successfully (44ms)' },
   { timestamp: '14:32:10.190', level: 'RUN', message: 'fetch_sentry_errors: Fetching latest 10 errors' },
   { timestamp: '14:32:10.570', level: 'OK', message: 'fetch_sentry_errors: Completed successfully (380ms)' },
-  { timestamp: '14:32:10.571', level: 'RUN', message: 'search_github_issues: Checking for duplicates' },
-  { timestamp: '14:32:11.234', level: 'INF', message: 'search_github_issues: Found 2 similar issues' },
-  { timestamp: '14:32:11.235', level: 'RUN', message: 'create_issue: Creating new GitHub issue' },
-  { timestamp: '14:32:11.456', level: 'OK', message: 'create_issue: Issue #1234 created successfully' },
-  { timestamp: '14:32:11.457', level: 'RUN', message: 'notify_slack: Sending notification to #dev-alerts' },
-  { timestamp: '14:32:11.678', level: 'OK', message: 'notify_slack: Message sent successfully' },
-  { timestamp: '14:32:11.679', level: 'INF', message: 'Workflow completed successfully' },
 ]
 
-export function LogViewer() {
+export type LogLine = { timestamp: string; level: string; message: string }
+
+export function LogViewer({ lines }: { lines?: LogLine[] }) {
+  const data = lines && lines.length > 0 ? lines : mockLogs
+
   const getLevelColor = (level: string) => {
     switch (level) {
-      case 'INF': return 'text-text-muted'
-      case 'RUN': return 'text-accent-blue'
-      case 'OK': return 'text-accent-green'
-      default: return 'text-text-muted'
+      case 'INF':
+        return 'text-text-secondary'
+      case 'RUN':
+        return 'text-accent-blue'
+      case 'OK':
+        return 'text-accent-green'
+      case 'ERR':
+        return 'text-accent-red'
+      default:
+        return 'text-text-secondary'
     }
   }
 
   return (
-    <div className="bg-surface border border-border rounded-lg overflow-hidden">
-      <div className="bg-muted-surface border-b border-border px-4 py-2">
-        <span className="text-xs font-mono text-text-muted">Workflow Logs</span>
+    <div className="bg-bg-elevated border border-border rounded-large-card overflow-hidden">
+      <div className="bg-bg-surface border-b border-border px-4 py-2">
+        <span className="text-xs font-mono text-text-secondary">Workflow logs</span>
       </div>
-      
+
       <div className="overflow-x-auto">
-        <table className="w-full font-mono text-xs">
-          <thead className="bg-muted-surface border-b border-border">
+        <table className="w-full font-mono text-[11px]">
+          <thead className="bg-bg-surface border-b border-border">
             <tr>
-              <th className="text-left p-3 text-text-muted">Timestamp</th>
-              <th className="text-left p-3 text-text-muted">Level</th>
-              <th className="text-left p-3 text-text-muted">Message</th>
+              <th className="text-left p-3 text-text-faint font-normal">Timestamp</th>
+              <th className="text-left p-3 text-text-faint font-normal">Level</th>
+              <th className="text-left p-3 text-text-faint font-normal">Message</th>
             </tr>
           </thead>
           <tbody>
-            {mockLogs.map((log, index) => (
-              <tr key={index} className="border-b border-border border-opacity-50">
-                <td className="p-3 text-text-muted">{log.timestamp}</td>
-                <td className={`p-3 font-semibold ${getLevelColor(log.level)}`}>
+            {data.map((log, index) => (
+              <tr
+                key={index}
+                className="border-b border-border/60 animate-slide-in opacity-0"
+                style={{
+                  animation: `slideInBottom 0.3s ease-out ${index * 45}ms forwards`,
+                }}
+              >
+                <td className="p-3 text-text-faint whitespace-nowrap">{log.timestamp}</td>
+                <td className={`p-3 font-semibold whitespace-nowrap ${getLevelColor(log.level)}`}>
                   {log.level}
                 </td>
                 <td className="p-3 text-text-primary">{log.message}</td>
