@@ -110,5 +110,4 @@ test-db-connection.js
 # ============================================
 .vercel
 .railway
-railway.toml
 DEPLOYMENT_GUIDE.md
