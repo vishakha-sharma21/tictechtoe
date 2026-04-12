@@ -22,3 +22,25 @@ Thumbs.db
 # editor files
 .vscode/
 .idea/
+# Next.js
+.next/
+out/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+mcp_agent/**/__pycache__/
+mcp_agent/**/*.pyc
+
+# Docker
+*.dockerignore
+
+# Python venv
+venv/
+.venv/
+env/
+
+# MCP env files (keep out of git)
+mcp_agent/.env

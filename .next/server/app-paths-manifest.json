@@ -1,9 +1,0 @@
-{
-  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/chats/route": "app/api/chats/route.js",
-  "/api/chats/append/route": "app/api/chats/append/route.js",
-  "/api/auth/sync/route": "app/api/auth/sync/route.js",
-  "/page": "app/page.js",
-  "/api/chats/[id]/route": "app/api/chats/[id]/route.js",
-  "/dashboard/page": "app/dashboard/page.js"
-}

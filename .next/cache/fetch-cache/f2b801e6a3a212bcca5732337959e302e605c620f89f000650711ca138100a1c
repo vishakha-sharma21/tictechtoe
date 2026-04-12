@@ -1,1 +1,0 @@
-{"kind":"FETCH","data":{"headers":{"content-length":"16","content-type":"application/json","date":"Sat, 11 Apr 2026 21:46:00 GMT","server":"uvicorn"},"body":"eyJib29rbWFya3MiOltdfQ==","status":200,"url":"http://localhost:8010/bookmarks/prajinrajranawat@gmail.com"},"revalidate":31536000,"tags":[]}
