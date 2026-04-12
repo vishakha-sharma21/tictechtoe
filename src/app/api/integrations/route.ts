@@ -2,19 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/nextauth'
 import { MongoClient } from 'mongodb'
 
-// MongoDB connection
-if (!process.env.MONGODB_URI) {
-  throw new Error('Invalid/Missing environment variable: "MONGODB_URI"')
-}
+// MongoDB connection (SAFE version)
+const MONGODB_URI = process.env.MONGODB_URI
 
 let cachedClient: MongoClient | null = null
 
 async function connectToDatabase() {
+  if (!MONGODB_URI) {
+    throw new Error("MONGODB_URI is not defined at runtime")
+  }
+
   if (cachedClient) {
     return cachedClient
   }
 
-  const client = new MongoClient(process.env.MONGODB_URI!)
+  const client = new MongoClient(MONGODB_URI)
   await client.connect()
   cachedClient = client
   return client
@@ -24,7 +26,7 @@ async function connectToDatabase() {
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
-    
+
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -41,12 +43,17 @@ export async function GET(request: NextRequest) {
     })
 
     if (!integration) {
-      return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Integration not found' },
+        { status: 404 }
+      )
     }
 
     return NextResponse.json(integration)
+
   } catch (error) {
     console.error('Get integration error:', error)
+
     return NextResponse.json(
       { error: 'Failed to get integration' },
       { status: 500 }
