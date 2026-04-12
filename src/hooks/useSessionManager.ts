@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react'
 import { sanitizeNodes } from '@/lib/dagUtils'
 
+const MCP_AGENT_URL = process.env.NEXT_PUBLIC_MCP_AGENT_URL || 'http://localhost:8010'
+
 export interface Message {
   role: 'human' | 'agent' | 'tool_connect' | 'agent_plan' | 'card'
   content: string
@@ -141,7 +143,7 @@ export function useSessionManager() {
       const sessionData = await sessionRes.json()
       const userId = sessionData?.user?.userId || 'unknown'
 
-      const res = await fetch('http://localhost:8010/execute-dag', {
+      const res = await fetch(`${MCP_AGENT_URL}/execute-dag`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, session_id: activeSessionId })
@@ -246,7 +248,7 @@ export function useSessionManager() {
       appendMessage({ role: 'human', content, timestamp: new Date().toISOString() })
 
       // Check for missing integrations first
-      const processRes = await fetch('http://localhost:8010/process-query', {
+      const processRes = await fetch(`${MCP_AGENT_URL}/process-query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -306,7 +308,7 @@ export function useSessionManager() {
         const newOrchMessages = [...orchMessages, { role: 'user', content }]
         setOrchMessages(newOrchMessages)
 
-        const orchRes = await fetch('http://localhost:8010/orchestrate', {
+        const orchRes = await fetch(`${MCP_AGENT_URL}/orchestrate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
