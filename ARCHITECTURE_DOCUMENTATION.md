@@ -82,7 +82,7 @@ DAGent is an AI-powered workflow orchestration platform that converts natural la
 - **Framework**: Next.js 14 with App Router
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **State Management**: Zustand
+- **State Management**: Redux
 - **Visualization**: React Flow for DAG rendering
 - **UI Components**: Custom component library with design system
 
