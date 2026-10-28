@@ -1,14 +1,15 @@
 'use client'
 import { useRef, useState, useEffect } from 'react'
 import { signOut } from 'next-auth/react'
-import { Zap, Plug, Settings } from 'lucide-react'
+import { Zap, Plug, KeyRound } from 'lucide-react'
 import { useUser } from '@/hooks/useUser'
 
 interface IconRailProps {
   onOpenIntegrations?: () => void
+  onOpenLlmKeys?: () => void
 }
 
-export default function IconRail({ onOpenIntegrations }: IconRailProps) {
+export default function IconRail({ onOpenIntegrations, onOpenLlmKeys }: IconRailProps) {
   const [activeRail, setActiveRail] = useState('workflows')
   const { name, email, initials } = useUser()
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -41,10 +42,10 @@ export default function IconRail({ onOpenIntegrations }: IconRailProps) {
       },
     },
     {
-      id: 'settings',
-      icon: Settings,
-      label: 'Settings',
-      onClick: () => setActiveRail('settings'),
+      id: 'ai-keys',
+      icon: KeyRound,
+      label: 'AI provider key',
+      onClick: () => onOpenLlmKeys?.(),
     },
   ]
 

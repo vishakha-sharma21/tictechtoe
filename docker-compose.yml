@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: mcp_agent
     ports:
-      - "8010:8010"
+      - "127.0.0.1:8010:8010"
     env_file:
       - ./mcp_agent/.env
     environment:
@@ -24,7 +24,7 @@ services:
       dockerfile: Dockerfile
     container_name: github_mcp
     ports:
-      - "8020:8020"
+      - "127.0.0.1:8020:8020"
     env_file:
       - ./mcp_agent/.env
     environment:
@@ -41,7 +41,7 @@ services:
       dockerfile: Dockerfile
     container_name: google_mcp
     ports:
-      - "8030:8030"
+      - "127.0.0.1:8030:8030"
     env_file:
       - ./mcp_agent/.env
     environment:
@@ -58,7 +58,7 @@ services:
       dockerfile: Dockerfile
     container_name: discord_mcp
     ports:
-      - "8040:8040"
+      - "127.0.0.1:8040:8040"
     env_file:
       - ./mcp_agent/.env
     environment:
@@ -75,7 +75,7 @@ services:
       dockerfile: Dockerfile
     container_name: twilio_mcp
     ports:
-      - "8050:8050"
+      - "127.0.0.1:8050:8050"
     env_file:
       - ./mcp_agent/.env
     environment:

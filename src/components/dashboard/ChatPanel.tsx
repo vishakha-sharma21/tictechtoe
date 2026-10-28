@@ -113,7 +113,8 @@ export function ChatPanel({
     setEditingTitle(false)
   }
 
-  const renderAgentContent = (content: string, idx: number) => {
+  const renderAgentContent = (rawContent: string | undefined, idx: number) => {
+    const content = typeof rawContent === 'string' ? rawContent : ''
     if (content.startsWith('📋 Plan')) {
       const lines = content.split('\n').filter(Boolean)
       return (

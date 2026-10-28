@@ -8,9 +8,10 @@ interface ConnectToolCardProps {
 
 export function ConnectToolCard({ tool, user_id, session_id }: ConnectToolCardProps) {
   const handleConnect = () => {
-    if (tool === 'github') {
-      window.location.href = `/api/oauth/github/connect?user_id=${user_id}&session_id=${session_id}`
-    }
+    const sid = encodeURIComponent(session_id)
+    if (tool === 'github') window.location.href = `/api/oauth/github/connect?session_id=${sid}`
+    if (tool === 'google') window.location.href = `/api/oauth/google/connect?session_id=${sid}`
+    if (tool === 'discord') window.location.href = '/api/oauth/discord'
   }
 
   const getToolInfo = (toolName: string) => {
@@ -21,6 +22,10 @@ export function ConnectToolCard({ tool, user_id, session_id }: ConnectToolCardPr
           name: 'GitHub',
           scopes: 'repo, read:user, user:email',
         }
+      case 'google':
+        return { icon: '📧', name: 'Google (Gmail & Drive)', scopes: 'gmail, drive, contacts' }
+      case 'discord':
+        return { icon: '🎮', name: 'Discord', scopes: 'identify, guilds, bot' }
       default:
         return {
           icon: '🔌',

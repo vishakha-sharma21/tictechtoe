@@ -111,3 +111,5 @@ test-db-connection.js
 .vercel
 .railway
 DEPLOYMENT_GUIDE.md
+!.env.example
+!mcp_agent/.env.example

@@ -1,34 +1,10 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
-from pymongo import MongoClient
-from dotenv import load_dotenv
-from openai import OpenAI
-import os
 import json
-from dotenv import load_dotenv
-load_dotenv()
+import re
 
-router = APIRouter()
+from app.db.mongo import integrations_col
+from app.services.llm import LlmKeyError, chat_json
 
-# MongoDB
-mongo_client = MongoClient(os.environ.get("MONGODB_URI", "mongodb://localhost:27017"))
-db = mongo_client.get_database("nexflow")
-integrations_col = db["integrations"]
-
-# OpenAI
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-
-# ── Request model ──────────────────────────────────────────
-class QueryRequest(BaseModel):
-    user_id: str
-    session_id: str
-    query: str
-
-
-# ── Tool detection ─────────────────────────────────────────
-def detect_tools(query: str):
-    prompt = f"""
+PROMPT = """
 You are a tool detection system.
 
 Available tools:
@@ -36,89 +12,54 @@ Available tools:
 - google (includes google_drive, gmail, contacts)
 - gmail
 - google_drive
+- discord
 
-Return ONLY a JSON array.
-No explanation.
-No markdown.
-No backticks.
+Return ONLY a JSON object of the form {{"tools": ["github"]}}.
+No explanation. No markdown. No backticks.
 
-Example:
-["github"]
+Decide from the WHOLE conversation which tools are needed. Short replies like "yes" or "ok" continue the earlier request.
+Only include a tool if the conversation clearly involves it.
 
-User query:
+Conversation:
 {query}
 """
+
+
+def detect_tools(query: str, user_id: str, history: list | None = None) -> list:
+    """Which connectors does this conversation need?
+
+    Small models hallucinate tools on short follow-ups ("yes do that" -> github), so the LLM's answer is only
+    trusted where the conversation contains matching keywords; if the LLM finds nothing but keywords do, use those.
+    Raises LlmKeyError when the user's key is missing/invalid; other failures fall back to keywords.
+    """
+    from app.services.orchestrator import GROUP_KEYWORDS  # local import: orchestrator imports this package too
+
+    recent = [m for m in (history or [])[-6:] if isinstance(m, dict)]
+    convo = "\n".join(f"{m.get('role', 'user')}: {str(m.get('content', ''))[:500]}" for m in recent)
+    evidence = (convo + "\n" + query).lower()
+    by_keyword = {g for g, rx in GROUP_KEYWORDS.items() if re.search(rx, evidence)}
+    # the connectors we actually require tokens for (twilio is platform-level)
+    needs_connect = lambda groups: sorted(g for g in groups if g in ("github", "google", "discord"))
+
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You output only valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0,
-        )
-        text = response.choices[0].message.content.strip()
-        print("🔍 GPT RAW OUTPUT:", text)
-        text = text.replace("```json", "").replace("```", "").strip()
-        tools = json.loads(text)
-        
-        # Normalize tool names
-        normalized_tools = []
-        for tool in tools:
-            if tool == "google_drive":
-                normalized_tools.append("google")
-            elif tool == "gmail":
-                normalized_tools.append("google")
-            else:
-                normalized_tools.append(tool)
-        
-        return normalized_tools
+        raw = chat_json(user_id, "You output only valid JSON.",
+                        [{"role": "user", "content": PROMPT.format(query=(convo + "\nuser: " + query) if convo else query)}],
+                        fast=True, temperature=0)
+        data = json.loads(raw)
+        tools = data.get("tools", []) if isinstance(data, dict) else data
+        llm = {"google" if t in ("google_drive", "gmail") else t for t in tools if isinstance(t, str)}
+        confirmed = llm & by_keyword
+        return needs_connect(confirmed or by_keyword)
+    except LlmKeyError:
+        raise
     except Exception as e:
-        print(" GPT Error:", e)
-        return []
+        print("Tool detection error:", type(e).__name__, str(e)[:300])
+        return needs_connect(by_keyword)
 
 
-# ── Check integrations ─────────────────────────────────────
-def get_missing_tools(user_id: str, required_tools: list):
-    doc = integrations_col.find_one({ "user_id": user_id })
-    print(f"Looking for user_id: '{user_id}' -> found: {doc is not None}")
-    
+def get_missing_tools(user_id: str, required_tools: list) -> list:
+    doc = integrations_col.find_one({"user_id": user_id})
     if not doc:
-        print(f"No document found for user_id: {user_id}")
         return required_tools
-
-    providers = doc.get("providers", [])
-    print(f"Providers in doc: {[p['provider'] for p in providers]}")
-    
-    connected_providers = [
-        p["provider"] for p in providers
-        if p.get("credentials", {}).get("access_token")
-    ]
-    print(f"Connected providers for {user_id}: {connected_providers}")
-
-    missing = [t for t in required_tools if t not in connected_providers]
-    return missing
-
-
-# ── Route ──────────────────────────────────────────────────
-@router.post("/process-query")
-def process_query(body: QueryRequest):
-    print(f"📨 Query from {body.user_id} | session {body.session_id}: {body.query}")
-
-    required_tools = detect_tools(body.query)
-    print(f"🔧 Required tools: {required_tools}")
-
-    missing_tools = get_missing_tools(body.user_id, required_tools)
-    print(f"❌ Missing tools: {missing_tools}")
-
-    if missing_tools:
-        return {
-            "status": "missing_integrations",
-            "required_tools": required_tools,
-            "missing_tools": missing_tools
-        }
-
-    return {
-        "status": "ready",
-        "required_tools": required_tools
-    }
+    connected = [p["provider"] for p in doc.get("providers", []) if p.get("credentials", {}).get("access_token")]
+    return [t for t in required_tools if t not in connected]

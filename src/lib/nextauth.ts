@@ -1,117 +1,46 @@
 import NextAuth from 'next-auth'
-import Google from 'next-auth/providers/google'
+import Credentials from 'next-auth/providers/credentials'
+import { authConfig } from '@/lib/auth.config'
+import { upsertGoogleUser, verifyPassword } from '@/lib/users'
+import { rateLimit } from '@/lib/rateLimit'
 
-// NextAuth configuration with JWT strategy
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: 'consent',
-          access_type: 'offline',
-          response_type: 'code',
-          scope: [
-            'openid',
-            'email',
-            'profile',
-            'https://www.googleapis.com/auth/drive',
-            'https://www.googleapis.com/auth/gmail.send',
-            'https://www.googleapis.com/auth/gmail.modify',      // ← add this
-  'https://www.googleapis.com/auth/gmail.labels',
-            'https://www.googleapis.com/auth/contacts.readonly'
-          ].join(' ')
-        }
-      }
-    })
+    ...authConfig.providers,
+    Credentials({
+      credentials: { email: {}, password: {} },
+      async authorize(creds) {
+        const email = String(creds?.email ?? '').trim().toLowerCase()
+        const password = String(creds?.password ?? '')
+        if (!EMAIL_RE.test(email) || password.length < 8 || password.length > 128) return null
+        // 8 attempts / 15 min per email
+        if (!rateLimit(`login:${email}`, 8, 15 * 60 * 1000)) return null
+        return verifyPassword(email, password)
+      },
+    }),
   ],
   callbacks: {
-    async signIn({ user, account, profile }) {
-      // Log successful user creation
-      if (user?.email) {
-        console.log(`User signed in: ${user.email}`)
+    ...authConfig.callbacks,
+    async signIn({ account, profile }) {
+      if (account?.provider === 'google') {
+        // Only accept Google accounts whose email Google has verified (prevents account takeover by linking).
+        return Boolean(profile?.email && profile.email_verified)
       }
-      
       return true
     },
-    async session({ session, token }) {
-      if (session?.user) {
-        session.user.id = token.sub ?? ''
-        session.user.name = token.name ?? ''
-        session.user.email = token.email ?? ''
-        // Use user_id from token
-        session.user.userId = token.userId as string | undefined
-      }
-      return session
-    },
-    async jwt({ token, user, account }) {
-      if (user) {
-        token.sub = user.id
-        token.name = user.name
-        token.email = user.email
-        // Generate and store user_id for our system
-        if (user.email) {
-          token.userId = `u${user.email.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toLowerCase()}`
-        }
-      }
-      // Store OAuth tokens from account in JWT for API route processing
-      if (account?.access_token) {
-        token.accessToken = account.access_token
-      }
-      if (account?.refresh_token) {
-        token.refreshToken = account.refresh_token
-      }
-      if (account?.expires_at) {
-        token.expiresAt = account.expires_at
-      }
-      if (account?.scope) {
-        token.scope = account.scope
+    async jwt({ token, user, account, profile }) {
+      if (account?.provider === 'google' && profile?.email) {
+        const u = await upsertGoogleUser(profile.email, profile.name ?? profile.email, profile.picture as string | undefined)
+        token.userId = u.id
+        token.email = u.email
+        token.name = u.name
+      } else if (user?.id && account?.provider === 'credentials') {
+        token.userId = user.id
       }
       return token
-    }
+    },
   },
-  events: {
-    async signIn({ user, account, profile }) {
-      if (!account || !profile) return
-      
-      try {
-        // Get the user_id (u001 format) from integrations collection
-        // Find by email since we have it from Google profile
-        const response = await fetch("http://localhost:8010/integrations/upsert-by-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: profile.email,
-            provider: account.provider,  // "google"
-            credentials: {
-              access_token: account.access_token,
-              refresh_token: account.refresh_token ?? null,
-              expires_at: account.expires_at ?? null,
-              token_type: account.token_type ?? "bearer",
-              scope: account.scope 
-                ? account.scope.split(" ").map(s => s.trim())
-                : []
-            },
-            meta: {
-              provider_account_id: account.providerAccountId,
-              email: profile.email,
-              name: profile.name
-            }
-          })
-        })
-        const data = await response.json()
-        console.log("Google integration saved:", data)
-      } catch (err) {
-        console.error("Failed to save Google integration:", err)
-        // never block login
-      }
-    }
-  },
-  pages: {
-    signIn: '/',   // redirects to landing, modal handles sign-in
-    error: '/auth'
-  },
-  session: { strategy: 'jwt' },   // required when using MongoDBAdapter
-  secret: process.env.NEXTAUTH_SECRET,
 })

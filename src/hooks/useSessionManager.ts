@@ -3,6 +3,28 @@ import { sanitizeNodes } from '@/lib/dagUtils'
 
 const MCP_AGENT_URL = process.env.NEXT_PUBLIC_MCP_AGENT_URL || 'http://localhost:8010'
 
+// The Python backend authenticates with a short-lived token minted by Next (see /api/backend-token).
+// It derives the user from the token, so no user_id is sent from here.
+let cachedToken: { value: string; exp: number } | null = null
+async function backendToken(): Promise<string> {
+  if (cachedToken && Date.now() < cachedToken.exp) return cachedToken.value
+  const res = await fetch('/api/backend-token', { cache: 'no-store' })
+  if (!res.ok) throw new Error('Your session expired — please sign in again.')
+  const { token } = await res.json()
+  cachedToken = { value: token, exp: Date.now() + 8 * 60 * 1000 } // tokens live 10 min
+  return token
+}
+
+async function backendPost(path: string, body: unknown) {
+  const res = await fetch(`${MCP_AGENT_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await backendToken()}` },
+    body: JSON.stringify(body),
+  })
+  if (res.status === 401) cachedToken = null
+  return res
+}
+
 export interface Message {
   role: 'human' | 'agent' | 'tool_connect' | 'agent_plan' | 'card'
   content: string
@@ -39,7 +61,6 @@ export function useSessionManager() {
   const [awaitingConfirm, setAwaitingConfirm] = useState(false)
   const [isExecuting, setIsExecuting] = useState(false)
   const [reactFlowData, setReactFlowData] = useState<any>({ nodes: [], edges: [] })
-  const [orchMessages, setOrchMessages] = useState<Array<{role: string, content: string}>>([])
 
   // Append message helper
   const appendMessage = useCallback((message: Message) => {
@@ -75,7 +96,6 @@ export function useSessionManager() {
       const newSession = data.chat
       setSessions(prev => [newSession, ...prev])
       selectSession(newSession._id)
-      setOrchMessages([])
     } catch (error) {
       console.error('Error creating session:', error)
     } finally {
@@ -139,15 +159,7 @@ export function useSessionManager() {
         }))
       }))
 
-      const sessionRes = await fetch('/api/auth/session')
-      const sessionData = await sessionRes.json()
-      const userId = sessionData?.user?.userId || 'unknown'
-
-      const res = await fetch(`${MCP_AGENT_URL}/execute-dag`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, session_id: activeSessionId })
-      })
+      const res = await backendPost('/execute-dag', { session_id: activeSessionId })
       const data = await res.json()
 
       if (data.status === 'error') {
@@ -247,18 +259,20 @@ export function useSessionManager() {
       // Append human message to chat
       appendMessage({ role: 'human', content, timestamp: new Date().toISOString() })
 
-      // Check for missing integrations first
-      const processRes = await fetch(`${MCP_AGENT_URL}/process-query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          session_id: activeSessionId,
-          query: content
-        })
-      })
+      // One call: the backend (LangGraph) remembers the conversation, so we only send the new message
+      const processRes = await backendPost('/agent/message', { session_id: activeSessionId, query: content })
       const processData = await processRes.json()
-      console.log('📡 process-query response:', processData)
+
+      // CASE 0: no AI key on file → ask for one
+      if (processData.status === 'missing_llm_key') {
+        appendMessage({
+          role: 'agent',
+          content: 'Add your OpenAI or Claude API key to start building workflows.',
+          timestamp: new Date().toISOString()
+        })
+        window.dispatchEvent(new Event('dagent:open-llm-keys'))
+        return
+      }
 
       // CASE 1: Tools missing → show connect cards
       if (processData.status === 'missing_integrations') {
@@ -279,53 +293,20 @@ export function useSessionManager() {
           })
         })
 
-        // Show connect card for each missing tool
-        processData.missing_tools.forEach((tool: string) => {
-          if (tool === 'github') {
-            appendMessage({
-              id: `connect_github_${Date.now()}`,
-              type: 'tool_connect',
-              role: 'card',
-              tool: 'github',
-              content: 'Connect GitHub to access repositories',
-              user_id: userId,
-              session_id: activeSessionId,
-              timestamp: new Date().toISOString()
-            })
-          }
-        })
-
-        // Save for auto-retry after OAuth
+        // Save for auto-retry after OAuth, then open the integrations panel to connect
         localStorage.setItem('dagent_last_query', content)
         localStorage.setItem('dagent_last_session', activeSessionId)
-        localStorage.setItem('dagent_user_id', userId)
+        window.dispatchEvent(new Event('dagent:open-integrations'))
 
         return
       }
 
-      // CASE 2: All tools ready → call orchestrate
-      if (processData.status === 'ready') {
-        const newOrchMessages = [...orchMessages, { role: 'user', content }]
-        setOrchMessages(newOrchMessages)
-
-        const orchRes = await fetch(`${MCP_AGENT_URL}/orchestrate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId,
-            session_id: activeSessionId,
-            messages: newOrchMessages
-          })
-        })
-
-        const orchData = await orchRes.json()
-        console.log('🤖 Orchestrator response:', orchData)
-
-        // Append agent response to orch history
-        setOrchMessages(prev => [...prev, {
-          role: 'assistant',
-          content: JSON.stringify(orchData)
-        }])
+      // CASE 2: the agent replied (clarify / plan / confirm / message)
+      {
+        const orchData = processData
+        // Tolerate replies where the model left the text out
+        orchData.message = orchData.message || (orchData.status === 'dag_ready' ? "Here's my plan - review it and let me know if you want changes:" : orchData.message)
+        orchData.question = orchData.question || (orchData.status === 'clarify' ? 'Could you give me a bit more detail?' : orchData.question)
 
         let agentContent = ''
 
@@ -403,7 +384,7 @@ export function useSessionManager() {
     } finally {
       setIsSending(false)
     }
-  }, [activeSessionId, awaitingConfirm, orchMessages, handleExecute, appendMessage])
+  }, [activeSessionId, awaitingConfirm, handleExecute, appendMessage])
 
   // Update workflow
   const updateWorkflow = useCallback(async (nodes: any[], edges: any[]) => {

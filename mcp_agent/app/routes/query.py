@@ -1,148 +1,54 @@
-from fastapi import APIRouter, Body
-from pydantic import BaseModel
-from pymongo import MongoClient
-from dotenv import load_dotenv
 from datetime import datetime, timezone
-from app.services.orchestrator import run_orchestrator
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from app.auth import current_user_id
+from app.db.mongo import chats_col
 from app.services.executor import execute_dag as run_dag
-from app.services.gemini import detect_tools
-import os
-load_dotenv()
+from app.services.agent_graph import reset_thread, run_turn
+from app.services.llm import has_key
 
 router = APIRouter()
 
-client = MongoClient(os.environ["MONGODB_URI"])
-db = client["nexflow"]
-integrations_col = db["integrations"]
-def get_missing_tools(user_id: str, required_tools: list):
-    doc = integrations_col.find_one({ "user_id": user_id })
-    if not doc:
-        return required_tools
-    providers = doc.get("providers", [])
-    connected = [p["provider"] for p in providers if p.get("credentials", {}).get("access_token")]
-    print(f"Connected providers for {user_id}: {connected}")
-    return [t for t in required_tools if t not in connected]
 
-
-
-class QueryRequest(BaseModel):
-    user_id: str
+# user_id is deliberately NOT part of any request body — it comes from the verified bearer token.
+class MessageRequest(BaseModel):
     session_id: str
     query: str
 
-class OrchestrateRequest(BaseModel):
-    user_id: str
-    session_id: str
-    messages: list
 
 class ExecuteDAGRequest(BaseModel):
-    user_id: str
     session_id: str
 
-GITHUB_MCP_URL = os.getenv("GITHUB_MCP_URL", "http://github_mcp:8020")
-GOOGLE_MCP_URL = os.getenv("GOOGLE_MCP_URL", "http://google_mcp:8030")
 
-def call_github_tool(tool_name: str, params: dict) -> dict:
-    """
-    tool_name example: "github.create_repo"
-    converts to POST http://github_mcp:8020/invoke/create_repo
-    """
-    endpoint = tool_name.replace("github.", "")
-    url = f"{GITHUB_MCP_URL}/invoke/{endpoint}"
-    
-    response = httpx.post(url, json=params, timeout=30)
-    return response.json()
+@router.post("/agent/message")
+def agent_message(body: MessageRequest, user_id: str = Depends(current_user_id)):
+    """One chat turn. The conversation lives server-side (LangGraph state in Mongo); the client sends only the new message."""
+    if not has_key(user_id):
+        return {"status": "missing_llm_key"}
 
-def call_google_tool(tool_name: str, params: dict) -> dict:
-    """
-    tool_name example: "google.gmail_send"
-    converts to POST http://google_mcp:8030/invoke/gmail_send
-    """
-    endpoint = tool_name.replace("google.", "")
-    url = f"{GOOGLE_MCP_URL}/invoke/{endpoint}"
-    
-    response = httpx.post(url, json=params, timeout=30)
-    return response.json()
-
-router = APIRouter()
-
-
-@router.post("/process-query")
-def process_query(req: QueryRequest):
-    tools = detect_tools(req.query)
-
-    missing_tools = get_missing_tools(req.user_id, tools)
-
-    if missing_tools:
-        return {
-            "status": "missing_integrations",
-            "required_tools": tools,
-            "missing_tools": missing_tools
-        }
-
-    return {
-        "status": "ready",
-        "required_tools": tools
-    }
-
-@router.post("/orchestrate")
-def orchestrate(body: OrchestrateRequest):
-    print(f"/orchestrate for {body.user_id} | {body.session_id} | {len(body.messages)} messages")
-
-    result = run_orchestrator(body.messages)
+    result = run_turn(user_id, body.session_id, body.query)
     status = result.get("status")
+    print(f"/agent/message {user_id} | {body.session_id} -> {status}")
 
-    # Save react_flow to chats collection if present (regardless of status)
-    if "react_flow" in result:
-        chats_col = db["chats"]
-        update_result = chats_col.update_one(
-            { "user_id": body.user_id, "session_id": body.session_id },
-            {
-                "$set": {
-                    "react_flow": result["react_flow"],
-                    "updated_at": datetime.now(timezone.utc)
-                }
-            },
-            upsert=True
-        )
-        print(f"Saved react_flow to chats for session {body.session_id}, status: {status}")
-        print(f"Update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
-    else:
-        print(f"No react_flow in result for status: {status}")
-        print(f"Result keys: {list(result.keys())}")
-
-    # Always append agent message to chat_history
-    agent_content = result.get("message") or result.get("question") or json.dumps(result)
-    chats_col = db["chats"]
-    chats_col.update_one(
-        { "user_id": body.user_id, "session_id": body.session_id },
-        {
-            "$push": {
-                "chat_history": {
-                    "role": "agent",
-                    "content": agent_content,
-                    "timestamp": datetime.now(timezone.utc)
-                }
-            },
-            "$set": { "updated_at": datetime.now(timezone.utc) }
-        }
-    )
-
+    if status in ("clarify", "dag_ready", "confirm", "message"):
+        now = datetime.now(timezone.utc)
+        update = {"$set": {"updated_at": now}}
+        if "react_flow" in result:
+            update["$set"]["react_flow"] = result["react_flow"]
+        chats_col.update_one({"user_id": user_id, "session_id": body.session_id}, update, upsert=True)
     return result
 
+
 @router.post("/execute-dag")
-def execute_dag_route(body: ExecuteDAGRequest):
-    user_id = body.user_id
+def execute_dag_route(body: ExecuteDAGRequest, user_id: str = Depends(current_user_id)):
     session_id = body.session_id
     now = datetime.now(timezone.utc)
 
     print(f"🚀 /execute-dag user_id='{user_id}' session_id='{session_id}'")
 
-    # List all chats to debug
-    all_docs = list(db["chats"].find({}, {"user_id": 1, "session_id": 1, "_id": 0}))
-    print(f"📂 All chats in nexflow: {all_docs}")
-
-    chat = db["chats"].find_one({
+    chat = chats_col.find_one({
         "user_id": user_id,
         "session_id": session_id
     })
@@ -154,7 +60,6 @@ def execute_dag_route(body: ExecuteDAGRequest):
     react_flow = chat.get("react_flow", {})
     nodes = react_flow.get("nodes", [])
     print(f"📋 Nodes count: {len(nodes)}")
-    print(f"📋 React flow data: {react_flow}")
 
     if not nodes:
         # Check if there's any orchestration history to understand what happened
@@ -204,7 +109,7 @@ def execute_dag_route(body: ExecuteDAGRequest):
     )
 
     # Save results to MongoDB
-    db["chats"].update_one(
+    chats_col.update_one(
         { "user_id": user_id, "session_id": session_id },
         {
             "$set": {
@@ -222,6 +127,9 @@ def execute_dag_route(body: ExecuteDAGRequest):
             }
         }
     )
+
+    if all_success:
+        reset_thread(user_id, session_id)
 
     # Build human readable summary
     summary = []

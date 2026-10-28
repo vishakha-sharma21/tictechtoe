@@ -1,13 +1,12 @@
 'use client'
 
 import React from 'react'
-import { signIn } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { Nav } from '@/components/shared/Nav'
 import { Button } from '@/components/shared/Button'
 import { Marquee } from '@/components/landing/Marquee'
 import { LandingHero } from '@/components/landing/LandingHero'
-import { useAuthSync } from '@/hooks/useAuthSync'
 import { Zap, Link2, Brain, UserCheck, GitBranch, Lock } from 'lucide-react'
 
 const FEATURES = [
@@ -44,13 +43,13 @@ const FEATURES = [
 ]
 
 export default function HomePage() {
-  const { status } = useAuthSync()
+  const { status } = useSession()
 
   const handleGetStarted = () => {
     if (status === 'authenticated') {
       window.location.href = '/dashboard'
     } else {
-      signIn('google', { callbackUrl: '/dashboard' })
+      window.location.href = '/auth'
     }
   }
 

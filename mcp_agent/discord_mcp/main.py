@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 mongo_client = MongoClient(os.environ["MONGODB_URI"])
-db = mongo_client["nexflow"]
+db = mongo_client[os.getenv("MONGODB_DB", "nexflow")]
 integrations_col = db["integrations"]
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
