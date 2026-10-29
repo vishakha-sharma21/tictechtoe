@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/nextauth'
+import { createOAuthState } from '@/lib/oauthState'
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const user_id = searchParams.get("user_id")
-  const session_id = searchParams.get("session_id")
-  
-  console.log("GitHub connect:", { user_id, session_id })
-  console.log("Client ID:", process.env.GITHUB_CLIENT_ID)
-  console.log("GITHUB_CLIENT_ID:", process.env.GITHUB_CLIENT_ID ? "SET" : "NOT SET")
-  console.log("GITHUB_REDIRECT_URI:", process.env.GITHUB_REDIRECT_URI)
-  
-  if (!process.env.GITHUB_CLIENT_ID) {
-    return new Response("GITHUB_CLIENT_ID not set in env", { status: 500 })
+  const session = await auth()
+  if (!session?.user?.userId) return NextResponse.redirect(new URL('/auth', request.url))
+  if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_REDIRECT_URI) {
+    return NextResponse.redirect(new URL('/dashboard?error=github_not_configured', request.url))
   }
-  
-  const state = Buffer.from(JSON.stringify({ user_id, session_id })).toString("base64")
-  
-  const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.GITHUB_REDIRECT_URI!)}&scope=repo%20delete_repo%20read:user%20user:email&state=${state}` 
-  
-  return Response.redirect(url)
+
+  const sid = request.nextUrl.searchParams.get('session_id') ?? ''
+  const state = createOAuthState('github', session.user.userId, { sid })
+  const params = new URLSearchParams({
+    client_id: process.env.GITHUB_CLIENT_ID,
+    redirect_uri: process.env.GITHUB_REDIRECT_URI,
+    scope: 'repo delete_repo read:user user:email',
+    state,
+  })
+  return NextResponse.redirect(`https://github.com/login/oauth/authorize?${params}`)
 }

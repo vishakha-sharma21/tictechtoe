@@ -11,7 +11,7 @@ load_dotenv()
 
 # MongoDB setup
 mongo_client = MongoClient(os.environ["MONGODB_URI"])
-db = mongo_client["nexflow"]
+db = mongo_client[os.getenv("MONGODB_DB", "nexflow")]
 integrations_col = db["integrations"]
 
 def get_github_token(user_id: str) -> str:
@@ -95,6 +95,12 @@ class CreateRepoRequest(BaseRequest):
     name: str
     description: str = ""
     private: bool = True
+
+class UpdateRepoRequest(BaseRequest):
+    owner: str
+    repo: str
+    private: Optional[bool] = None       # True = make private, False = make public
+    description: Optional[str] = None
 
 class DeleteRepoRequest(BaseRequest):
     owner: str
@@ -207,6 +213,11 @@ def tools():
             "name": "github.create_repo",
             "description": "Create a new repository",
             "input_schema": CreateRepoRequest.model_json_schema()
+        },
+        {
+            "name": "github.update_repo",
+            "description": "Change an existing repository's visibility (private/public) and/or description",
+            "input_schema": UpdateRepoRequest.model_json_schema()
         },
         {
             "name": "github.delete_repo",
@@ -343,6 +354,35 @@ def create_repo(req: CreateRepoRequest):
             "html_url": data["html_url"],
             "clone_url": data["clone_url"]
         }}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/invoke/github.update_repo")
+def update_repo(req: UpdateRepoRequest):
+    """PATCH /repos/{owner}/{repo}. Only the fields that were provided are changed."""
+    payload = {}
+    if req.private is not None:
+        payload["private"] = req.private
+    if req.description is not None:
+        payload["description"] = req.description
+    if not payload:
+        return {"error": "Nothing to update: provide 'private' and/or 'description'."}
+    try:
+        data = make_github_request(req.user_id, "PATCH", f"repos/{req.owner}/{req.repo}", json=payload)
+        return {"result": {
+            "name": data["name"],
+            "full_name": data["full_name"],
+            "private": data["private"],
+            "visibility": data.get("visibility"),
+            "description": data.get("description"),
+            "html_url": data["html_url"],
+        }}
+    except HTTPException as e:
+        if e.status_code == 404:
+            return {"error": f"Repository {req.owner}/{req.repo} not found (or your token can't access it)."}
+        if e.status_code == 403:
+            return {"error": "GitHub refused: the token needs the 'repo' scope (and admin rights on this repository)."}
+        return {"error": str(e.detail)}
     except Exception as e:
         return {"error": str(e)}
 

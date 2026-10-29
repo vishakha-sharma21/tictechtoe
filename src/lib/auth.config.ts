@@ -1,64 +1,30 @@
 import type { NextAuthConfig } from 'next-auth'
 import Google from 'next-auth/providers/google'
 
-// Edge-safe auth configuration - no MongoDB adapter or Node.js modules
+// Edge-safe config (used by middleware): no DB, no Node-only modules.
+// Google login is IDENTITY ONLY. Gmail/Drive access is granted separately via the
+// "Google" connector (/api/oauth/google/connect), so signing in never over-requests scopes.
 export const authConfig: NextAuthConfig = {
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: 'consent',
-          access_type: 'offline',
-          response_type: 'code',
-          scope: [
-            'openid',
-            'email',
-            'profile',
-            'https://www.googleapis.com/auth/drive',
-            'https://www.googleapis.com/auth/gmail.send',
-            'https://www.googleapis.com/auth/contacts.readonly'
-          ].join(' ')
-        }
-      }
-    })
+      authorization: { params: { scope: 'openid email profile', prompt: 'select_account' } },
+    }),
   ],
   pages: {
     signIn: '/auth',
-    error: '/auth'
+    error: '/auth',
   },
-  session: {
-    strategy: 'jwt'
-  },
+  session: { strategy: 'jwt', maxAge: 7 * 24 * 60 * 60 },
   callbacks: {
-    async signIn({ user, account }) {
-      return true
-    },
     async session({ session, token }) {
-      if (token.email) {
-        session.user.id = token.email
+      if (session.user) {
+        session.user.id = (token.userId as string) ?? ''
+        session.user.userId = token.userId as string | undefined
       }
       return session
     },
-    async jwt({ token, user, account }) {
-      if (user?.email) {
-        token.email = user.email
-      }
-      // Store OAuth tokens from account in JWT for API route processing
-      if (account?.access_token) {
-        token.accessToken = account.access_token
-      }
-      if (account?.refresh_token) {
-        token.refreshToken = account.refresh_token
-      }
-      if (account?.expires_at) {
-        token.expiresAt = account.expires_at
-      }
-      if (account?.scope) {
-        token.scope = account.scope
-      }
-      return token
-    }
-  }
+  },
 }

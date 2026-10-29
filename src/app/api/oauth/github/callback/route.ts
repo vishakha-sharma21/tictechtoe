@@ -1,111 +1,58 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/nextauth'
+import { verifyOAuthState } from '@/lib/oauthState'
+import { saveIntegration } from '@/lib/integrations'
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const code = searchParams.get("code")
-  const state = searchParams.get("state")
+  const base = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const fail = (code: string) => NextResponse.redirect(`${base}/dashboard?error=${code}`)
 
-  if (!code || !state) {
-    return new NextResponse("Missing code or state", { status: 400 })
-  }
+  const session = await auth()
+  if (!session?.user?.userId) return NextResponse.redirect(`${base}/auth`)
+  const userId = session.user.userId
 
-  // Step 1 — Decode state
-  const { user_id, session_id } = JSON.parse(
-    Buffer.from(state, "base64").toString()
-  )
-  console.log("GitHub callback for user:", user_id, "session:", session_id)
+  const code = request.nextUrl.searchParams.get('code')
+  const state = verifyOAuthState('github', request.nextUrl.searchParams.get('state'), userId)
+  if (!code || !state) return fail('github_invalid_state')
 
-  // Step 2 — Exchange code for access token
-  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
+  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       client_id: process.env.GITHUB_CLIENT_ID,
       client_secret: process.env.GITHUB_CLIENT_SECRET,
-      code
-    })
+      code,
+      redirect_uri: process.env.GITHUB_REDIRECT_URI,
+    }),
   })
   const tokenData = await tokenRes.json()
-  console.log("Token response:", tokenData)
+  if (!tokenData.access_token) return fail('github_token_failed')
 
-  const { access_token, scope, token_type } = tokenData
-
-  if (!access_token) {
-    return new NextResponse("Failed to get access token from GitHub", { status: 500 })
-  }
-
-  // Step 3 — Fetch GitHub user profile
-  const userRes = await fetch("https://api.github.com/user", {
-    headers: {
-      "Authorization": `Bearer ${access_token}`,
-      "Accept": "application/vnd.github+json"
-    }
-  })
-  const githubUser = await userRes.json()
-  console.log("GitHub user:", githubUser.login, githubUser.id)
-
-  // Step 4 — Get email if not public
-  let email = githubUser.email
-  if (!email) {
-    const emailsRes = await fetch("https://api.github.com/user/emails", {
-      headers: { "Authorization": `Bearer ${access_token}` }
+  const gh = (path: string) =>
+    fetch(`https://api.github.com${path}`, {
+      headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/vnd.github+json' },
     })
-    const emails = await emailsRes.json()
-    const primary = emails.find((e: any) => e.primary && e.verified)
-    email = primary?.email || null
+
+  const githubUser = await (await gh('/user')).json()
+  let email: string | null = githubUser.email ?? null
+  if (!email) {
+    const emails = await (await gh('/user/emails')).json()
+    email = Array.isArray(emails) ? emails.find((e: any) => e.primary && e.verified)?.email ?? null : null
   }
 
-  // Step 5 — Save to MongoDB via Python backend
-  const integrationDoc = {
-    user_id: user_id,
-    provider: "github",
-    credentials: {
-      access_token: access_token,
-      refresh_token: null,
+  await saveIntegration(
+    userId,
+    'github',
+    {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token ?? null,
       expires_at: null,
-      token_type: token_type || "bearer",
-      scope: scope ? scope.split(",").map((s: string) => s.trim()) : ["repo", "read:user", "user:email"]
+      token_type: tokenData.token_type || 'bearer',
+      scope: tokenData.scope ? String(tokenData.scope).split(/[,\s]+/).filter(Boolean) : [],
     },
-    meta: {
-      provider_account_id: String(githubUser.id),
-      email: email,
-      name: githubUser.name || githubUser.login
-    }
-  }
-
-  // Check if GitHub integration already exists to prevent duplicates
-  const existingCheck = await fetch("http://localhost:8010/integrations/check", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id, provider: "github" })
-  })
-  const existingData = await existingCheck.json()
-  
-  if (existingData.exists) {
-    console.log("GitHub integration already exists, redirecting to dashboard")
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?reconnect=true`)
-  }
-
-  console.log("Saving integration:", integrationDoc)
-
-  const saveRes = await fetch('http://localhost:8010/integrations/upsert', {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(integrationDoc)
-  })
-  const saveData = await saveRes.json()
-  console.log("Save result:", saveData)
-
-  if (!saveRes.ok) {
-    console.error("Failed to save integration:", saveData)
-    // Still redirect — don't block user
-  }
-
-  // Step 6 — Redirect back to dashboard
-  return NextResponse.redirect(
-    `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?reconnect=true&session_id=${session_id}` 
+    { provider_account_id: String(githubUser.id), email, name: githubUser.name || githubUser.login }
   )
+
+  const sid = state.sid ? `&session_id=${encodeURIComponent(state.sid)}` : ''
+  return NextResponse.redirect(`${base}/dashboard?reconnect=true${sid}`)
 }

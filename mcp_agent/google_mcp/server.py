@@ -18,7 +18,7 @@ load_dotenv()
 
 # MongoDB setup
 mongo_client = MongoClient(os.environ["MONGODB_URI"])
-db = mongo_client["nexflow"]
+db = mongo_client[os.getenv("MONGODB_DB", "nexflow")]
 integrations_col = db["integrations"]
 
 def get_google_credentials(user_id: str) -> Credentials:

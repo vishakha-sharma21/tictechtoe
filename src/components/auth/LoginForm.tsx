@@ -4,9 +4,9 @@ import { useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import type { RootState } from '@/store/store'
 import { setLoginEmail, setLoginPassword, setLoginErrors, clearLoginErrors } from '@/store/authFormsSlice'
-import { closeModal, setLoading } from '@/store/authModalSlice'
+import { closeModal, setLoading, switchTab } from '@/store/authModalSlice'
 import { login } from '@/lib/auth'
-import { GoogleSignInButton } from '@/components/shared/GoogleSignInButton'
+import GoogleSection from './GoogleSection'
 
 export default function LoginForm() {
   const dispatch = useDispatch()
@@ -44,7 +44,7 @@ export default function LoginForm() {
       dispatch(setLoading(false))
       dispatch(closeModal())
       // You might want to redirect or update user state here
-      window.location.reload() // Simple way to refresh and show logged-in state
+      window.location.href = '/dashboard'
     } catch (error) {
       dispatch(setLoading(false))
       const errorMessage = error instanceof Error ? error.message : 'Login failed'
@@ -118,13 +118,7 @@ export default function LoginForm() {
 
         {/* Forgot Password */}
         <div className="text-right">
-          <button
-            type="button"
-            className="text-sm text-blue-600 hover:text-blue-700"
-            onClick={() => {/* TODO: Implement forgot password */}}
-          >
-            Forgot password?
-          </button>
+          <span className="text-xs text-gray-400">Forgot password? Sign in with Google, or contact support.</span>
         </div>
 
         {/* Submit Button */}
@@ -144,24 +138,14 @@ export default function LoginForm() {
         </button>
       </form>
 
-      {/* OAuth */}
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-300"></div>
-        </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-white text-gray-500">Or continue with</span>
-        </div>
-      </div>
-
-      <GoogleSignInButton forceLight />
+      <GoogleSection />
 
       {/* Footer */}
       <div className="text-center text-sm text-gray-600">
         Don't have an account?{' '}
         <button
           className="text-blue-600 hover:text-blue-700 font-medium"
-          onClick={() => {/* TODO: Switch to signup tab */}}
+          onClick={() => dispatch(switchTab('signup'))}
         >
           Sign up
         </button>

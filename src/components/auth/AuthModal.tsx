@@ -5,7 +5,7 @@ import { useSelector, useDispatch } from 'react-redux'
 import { X } from 'lucide-react'
 import type { RootState } from '@/store/store'
 import { closeModal } from '@/store/authModalSlice'
-import { GoogleSignInButton } from '@/components/shared/GoogleSignInButton'
+import AuthTabs from './AuthTabs'
 
 export default function AuthModal() {
   const dispatch = useDispatch()
@@ -60,27 +60,7 @@ export default function AuthModal() {
           <X className="w-4 h-4 text-gray-500" />
         </button>
 
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-serif text-gray-900 mb-2">
-            Welcome to DAGent
-          </h2>
-          <p className="text-sm text-gray-600">
-            Sign in with Google to start building intelligent workflows
-          </p>
-        </div>
-
-        <div className="w-full mb-6">
-          <GoogleSignInButton
-            forceLight
-            onBeforeSignIn={() => dispatch(closeModal())}
-          />
-        </div>
-
-        {/* Info */}
-        <div className="text-center text-xs text-gray-500">
-          By signing in, you agree to our Terms of Service and Privacy Policy
-        </div>
+        <AuthTabs />
       </div>
 
       <style jsx>{`

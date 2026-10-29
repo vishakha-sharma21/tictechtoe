@@ -1,4 +1,6 @@
+import re
 import httpx
+from concurrent.futures import ThreadPoolExecutor
 import os
 from datetime import datetime, timezone
 
@@ -114,6 +116,69 @@ def resolve_params(params: dict, results: dict, user_id: str = None) -> dict:
             resolved[key] = value
     return resolved
 
+# Required params per tool. Shared by the executor (runtime check) and the plan validator (orchestrator).
+REQUIRED_FIELDS = {
+    # GitHub tools
+    "github.create_repo": ["name"],
+    "github.create_or_update_file": ["owner", "repo", "file_path", "content", "message"],
+    "github.get_repo": ["owner", "repo"],
+    "github.delete_repo": ["owner", "repo"],
+    "github.update_repo": ["owner", "repo"],
+    "github.list_files": ["owner", "repo"],
+    "github.get_file": ["owner", "repo", "file_path"],
+    "github.delete_file": ["owner", "repo", "file_path", "message"],
+    "github.create_issue": ["owner", "repo", "title"],
+    "github.list_issues": ["owner", "repo"],
+    "github.close_issue": ["owner", "repo", "issue_number"],
+    "github.create_pull_request": ["owner", "repo", "title", "head", "base"],
+    "github.merge_pull_request": ["owner", "repo", "pr_number"],
+    "github.create_branch": ["owner", "repo", "branch_name"],
+    "github.list_branches": ["owner", "repo"],
+    "github.get_commits": ["owner", "repo"],
+    "github.fork_repo": ["owner", "repo"],
+
+    # Google Gmail tools
+    "google.gmail_send": ["to", "subject", "body"],
+    "google.gmail_get": ["message_id"],
+    "google.gmail_reply": ["message_id", "body"],
+    "google.gmail_search": ["query"],
+    "google.gmail_apply_label": ["message_id", "label_ids"],
+    "google.gmail_remove_label": ["message_id", "label_ids"],
+    "google.gmail_label_messages": ["query", "label_id"],
+    "google.gmail_get_or_create_label": ["name"],
+    "google.gmail_create_label": ["name"],
+
+    # Google Sheets tools
+    "google.sheets_create": ["title"],
+    "google.sheets_get": ["spreadsheet_id"],
+    "google.sheets_read": ["spreadsheet_id", "range"],
+    "google.sheets_write": ["spreadsheet_id", "range", "values"],
+    "google.sheets_append": ["spreadsheet_id", "range", "values"],
+    "google.sheets_clear": ["spreadsheet_id", "range"],
+    "google.sheets_add_sheet": ["spreadsheet_id", "sheet_name"],
+    "google.sheets_delete_rows": ["spreadsheet_id", "sheet_id", "start_index", "end_index"],
+
+    # Discord tools
+    "discord.send_message": ["channel_id", "content"],
+    "discord.get_messages": ["channel_id"],
+    "discord.send_dm": ["discord_user_id", "content"],
+    "discord.list_channels": ["guild_id"],
+    "discord.get_server_info": ["guild_id"],
+    "discord.add_reaction": ["channel_id", "message_id", "emoji"],
+    "discord.create_channel": ["guild_id", "name"],
+    "discord.get_user": ["discord_user_id"],
+    "discord.delete_message": ["channel_id", "message_id"],
+    "discord.list_servers": [],
+
+    # Twilio tools
+    "twilio.make_call": ["message", "to"],
+    "twilio.send_sms": ["message", "to"],
+    "twilio.get_call_status": ["call_sid"],
+    "twilio.get_sms_status": ["message_sid"],
+    "twilio.send_whatsapp": ["message", "to"]
+}
+
+
 def call_tool(tool_name: str, params: dict) -> dict:
     # Determine which MCP service to use based on tool name
     if tool_name.startswith("github."):
@@ -132,65 +197,7 @@ def call_tool(tool_name: str, params: dict) -> dict:
         return { "success": False, "error": f"Unknown tool prefix: {tool_name}" }
     
     # Validate required fields are not None
-    required_fields = {
-        # GitHub tools
-        "github.create_repo": ["name"],
-        "github.create_or_update_file": ["owner", "repo", "file_path", "content", "message"],
-        "github.get_repo": ["owner", "repo"],
-        "github.delete_repo": ["owner", "repo"],
-        "github.list_files": ["owner", "repo"],
-        "github.get_file": ["owner", "repo", "file_path"],
-        "github.delete_file": ["owner", "repo", "file_path", "message"],
-        "github.create_issue": ["owner", "repo", "title"],
-        "github.list_issues": ["owner", "repo"],
-        "github.close_issue": ["owner", "repo", "issue_number"],
-        "github.create_pull_request": ["owner", "repo", "title", "head", "base"],
-        "github.merge_pull_request": ["owner", "repo", "pr_number"],
-        "github.create_branch": ["owner", "repo", "branch_name"],
-        "github.list_branches": ["owner", "repo"],
-        "github.get_commits": ["owner", "repo"],
-        "github.fork_repo": ["owner", "repo"],
-        
-        # Google Gmail tools
-        "google.gmail_send": ["to", "subject", "body"],
-        "google.gmail_get": ["message_id"],
-        "google.gmail_reply": ["message_id", "body"],
-        "google.gmail_search": ["query"],
-        "google.gmail_apply_label": ["message_id", "label_ids"],
-        "google.gmail_remove_label": ["message_id", "label_ids"],
-        "google.gmail_label_messages": ["query", "label_id"],
-        "google.gmail_get_or_create_label": ["name"],
-        "google.gmail_create_label": ["name"],
-        
-        # Google Sheets tools
-        "google.sheets_create": ["title"],
-        "google.sheets_get": ["spreadsheet_id"],
-        "google.sheets_read": ["spreadsheet_id", "range"],
-        "google.sheets_write": ["spreadsheet_id", "range", "values"],
-        "google.sheets_append": ["spreadsheet_id", "range", "values"],
-        "google.sheets_clear": ["spreadsheet_id", "range"],
-        "google.sheets_add_sheet": ["spreadsheet_id", "sheet_name"],
-        "google.sheets_delete_rows": ["spreadsheet_id", "sheet_id", "start_index", "end_index"],
-        
-        # Discord tools
-        "discord.send_message": ["channel_id", "content"],
-        "discord.get_messages": ["channel_id"],
-        "discord.send_dm": ["discord_user_id", "content"],
-        "discord.list_channels": ["guild_id"],
-        "discord.get_server_info": ["guild_id"],
-        "discord.add_reaction": ["channel_id", "message_id", "emoji"],
-        "discord.create_channel": ["guild_id", "name"],
-        "discord.get_user": ["discord_user_id"],
-        "discord.delete_message": ["channel_id", "message_id"],
-        "discord.list_servers": [],
-        
-        # Twilio tools
-        "twilio.make_call": ["message"],
-        "twilio.send_sms": ["message"],
-        "twilio.get_call_status": ["call_sid"],
-        "twilio.get_sms_status": ["message_sid"],
-        "twilio.send_whatsapp": ["message"]
-    }
+    required_fields = REQUIRED_FIELDS
     
     missing_fields = []
     if endpoint in required_fields:
@@ -260,35 +267,93 @@ def topological_sort(nodes: list) -> list:
     ordered.extend(remaining)
     return ordered
 
+_API_DISABLED = re.compile(r"https://console\.developers\.google\.com/apis/api/[^\s\"'<>]+")
+
+
+def friendly_error(err) -> str:
+    """Turn raw tool errors into something a human can act on."""
+    msg = str(err or "failed")
+    if "accessNotConfigured" in msg or "has not been used in project" in msg:
+        link = _API_DISABLED.search(msg)
+        return ("A Google API isn't enabled for your Google Cloud project. Enable it"
+                + (f" here: {link.group(0)}" if link else " in the Cloud Console")
+                + ", wait ~1 minute, then run the workflow again.")
+    if "invalid_grant" in msg or "Token has been expired or revoked" in msg:
+        return "Google access expired or was revoked. Reconnect Google in Integrations."
+    return msg if len(msg) <= 300 else msg[:300] + "…"
+
+
+def _referenced_nodes(value) -> set:
+    """Node ids referenced as {node_id.field} anywhere inside a params value."""
+    if isinstance(value, str):
+        return set(re.findall(r"\{(node_[\w-]+)\.", value))
+    if isinstance(value, list):
+        return set().union(*[_referenced_nodes(v) for v in value]) if value else set()
+    if isinstance(value, dict):
+        return set().union(*[_referenced_nodes(v) for v in value.values()]) if value else set()
+    return set()
+
+
+MAX_PARALLEL = 4  # independent nodes run concurrently; kept modest to stay under provider rate limits
+
+
 def execute_dag(nodes: list, user_id: str) -> list:
-    results = {}
-    execution_log = []
+    """Run the graph in waves: every node whose dependencies are finished runs at the same time.
 
-    for node in topological_sort(nodes):
-        node_id = node["id"]
-        data = node.get("data", {})
-        tool_name = data.get("tool")
+    Dependencies = data.depends_on + any {node_x.field} reference in params. A node whose dependency failed
+    (or was skipped) is skipped, not run with missing inputs.
+    """
+    runnable = [n for n in nodes if n.get("data", {}).get("tool")]
+    for n in nodes:
+        if not n.get("data", {}).get("tool"):
+            print(f"⚠️ Skipping node {n.get('id')} — no tool defined")
+    ids = {n["id"] for n in runnable}
+
+    def deps_of(n) -> set:
+        declared = n["data"].get("depends_on") or []
+        declared = {d for d in declared if isinstance(d, str)} if isinstance(declared, list) else set()
+        return (declared | _referenced_nodes(n["data"].get("params", {}))) & ids - {n["id"]}
+
+    results: dict = {}
+    log_by_id: dict = {}
+    pending = list(runnable)
+
+    def run_one(node) -> tuple:
+        node_id, data = node["id"], node["data"]
+        tool_name = data["tool"]
         params = dict(data.get("params", {}))
-
-        if not tool_name:
-            print(f"⚠️ Skipping node {node_id} — no tool defined")
-            continue
-
+        blockers = sorted(d for d in deps_of(node) if not results.get(d, {}).get("success"))
+        if blockers:
+            result = { "success": False, "error": f"Skipped because {', '.join(blockers)} did not succeed." }
+            return node_id, tool_name, params, result
         params["user_id"] = user_id
         params = resolve_params(params, results, user_id)
-
         print(f"\n🚀 Executing node '{node_id}': {tool_name}")
-        result = call_tool(tool_name, params)
-        results[node_id] = result
+        return node_id, tool_name, params, call_tool(tool_name, params)
 
-        execution_log.append({
-            "node_id": node_id,
-            "tool": tool_name,
-            "params": params,
-            "result": result.get("result"),
-            "success": result.get("success"),
-            "error": result.get("error"),
-            "executed_at": datetime.now(timezone.utc).isoformat()
-        })
+    wave_no = 0
+    while pending:
+        ready = [n for n in pending if deps_of(n) <= set(results)]
+        if not ready:  # unsatisfiable (cycle / dependency on a dropped node): run the rest rather than hang
+            print("⚠️ Dependency cycle detected — running remaining nodes in order")
+            ready = pending[:1]
+        wave_no += 1
+        print(f"🌊 Wave {wave_no}: {[n['id'] for n in ready]}")
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+            outcomes = list(pool.map(run_one, ready))
+        for node_id, tool_name, params, result in outcomes:
+            results[node_id] = result
+            log_by_id[node_id] = {
+                "node_id": node_id,
+                "tool": tool_name,
+                "params": params,
+                "result": result.get("result"),
+                "success": result.get("success"),
+                "error": friendly_error(result.get("error")) if result.get("error") else None,
+                "wave": wave_no,
+                "executed_at": datetime.now(timezone.utc).isoformat()
+            }
+        pending = [n for n in pending if n["id"] not in results]
 
-    return execution_log
+    # keep the log in the plan's node order (the UI lists steps in that order)
+    return [log_by_id[n["id"]] for n in runnable if n["id"] in log_by_id]

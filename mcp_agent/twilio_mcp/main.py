@@ -2,15 +2,18 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 import os
+import re
 from dotenv import load_dotenv
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
+from urllib.parse import quote
+from xml.sax.saxutils import escape
 
 load_dotenv()
 
 TWILIO_ACCOUNT_SID = os.environ["TWILIO_ACCOUNT_SID"]
 TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
 TWILIO_FROM_NUMBER = os.environ["TWILIO_FROM_NUMBER"]
-TWILIO_TO_NUMBER = os.environ["TWILIO_TO_NUMBER"]
 
 app = FastAPI()
 
@@ -68,21 +71,39 @@ def tools():
         }
     ]
 
+def build_twiml(message: str) -> str:
+    """Speech for a phone call.
+    - 1s pause first: speech that starts the instant the call is answered gets its first word clipped.
+    - Polly.Aditi speaks Hindi and Indian English ("alice" can't read Devanagari); falls back by script.
+    - 1s pause after, so the call doesn't hang up on the last word."""
+    lang = "hi-IN" if re.search(r"[\u0900-\u097F]", message) else "en-IN"
+    return (f'<Response><Pause length="1"/>'
+            f'<Say voice="Polly.Aditi" language="{lang}">{escape(message)}</Say>'
+            f'<Pause length="1"/></Response>')
+
+
+def require_destination(to):
+    """Never fall back to a configured number: every message/call must name its recipient."""
+    if not to or not str(to).strip():
+        raise ValueError("A destination phone number is required (E.164, e.g. +919876543210).")
+    return str(to).strip()
+
+
 @app.post("/invoke/twilio.make_call")
 def make_call(req: MakeCallRequest):
     try:
         client = get_twilio_client()
-        to_number = req.to or TWILIO_TO_NUMBER
-        twiml = f"""
-            <Response>
-                <Say voice="alice">{req.message}</Say>
-            </Response>
-        """
-        call = client.calls.create(
-            to=to_number,
-            from_=TWILIO_FROM_NUMBER,
-            twiml=twiml
-        )
+        to_number = require_destination(req.to)
+        # Escape: the message is free text (e.g. a shayari with "&" or "<") and is embedded in XML.
+        twiml = build_twiml(req.message)
+        try:
+            call = client.calls.create(to=to_number, from_=TWILIO_FROM_NUMBER, twiml=twiml)
+        except TwilioRestException as e:
+            # Trial accounts may not use the inline `twiml` parameter; they can only fetch TwiML from a URL.
+            if "trial accounts have limited parameter access" not in str(e):
+                raise
+            url = "https://twimlets.com/echo?Twiml=" + quote(twiml)
+            call = client.calls.create(to=to_number, from_=TWILIO_FROM_NUMBER, url=url)
         return {"result": {
             "call_sid": call.sid,
             "status": call.status,
@@ -97,7 +118,7 @@ def make_call(req: MakeCallRequest):
 def send_sms(req: SendSMSRequest):
     try:
         client = get_twilio_client()
-        to_number = req.to or TWILIO_TO_NUMBER
+        to_number = require_destination(req.to)
         message = client.messages.create(
             to=to_number,
             from_=TWILIO_FROM_NUMBER,
@@ -150,7 +171,7 @@ def get_sms_status(req: GetSMSStatusRequest):
 def send_whatsapp(req: SendWhatsAppRequest):
     try:
         client = get_twilio_client()
-        to_number = f"whatsapp:{req.to or TWILIO_TO_NUMBER}"
+        to_number = f"whatsapp:{require_destination(req.to)}"
         from_number = f"whatsapp:{TWILIO_FROM_NUMBER}"
         message = client.messages.create(
             to=to_number,

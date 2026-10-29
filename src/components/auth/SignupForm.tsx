@@ -14,7 +14,7 @@ import {
 import { closeModal, setLoading, switchTab } from '@/store/authModalSlice'
 import PasswordStrength from './PasswordStrength'
 import { signup } from '@/lib/auth'
-import { GoogleSignInButton } from '@/components/shared/GoogleSignInButton'
+import GoogleSection from './GoogleSection'
 
 export default function SignupForm() {
   const dispatch = useDispatch()
@@ -83,7 +83,7 @@ export default function SignupForm() {
       dispatch(setLoading(false))
       dispatch(closeModal())
       // You might want to redirect or update user state here
-      window.location.reload() // Simple way to refresh and show logged-in state
+      window.location.href = '/dashboard'
     } catch (error) {
       dispatch(setLoading(false))
       const errorMessage = error instanceof Error ? error.message : 'Signup failed'
@@ -233,17 +233,7 @@ export default function SignupForm() {
         </button>
       </form>
 
-      {/* OAuth */}
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-300"></div>
-        </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-white text-gray-500">Or continue with</span>
-        </div>
-      </div>
-
-      <GoogleSignInButton forceLight />
+      <GoogleSection />
 
       {/* Footer */}
       <div className="space-y-2">

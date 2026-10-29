@@ -69,16 +69,14 @@ const PROVIDERS: ProviderRow[] = [
     emoji: '📧',
     name: 'Gmail',
     blurb: 'Send and read email in workflows',
-    tools: '',
-    soon: true,
+    tools: '20 tools available',
   },
   {
     id: 'google_drive',
     emoji: '💾',
     name: 'Google Drive',
-    blurb: 'Files and folders automation',
-    tools: '',
-    soon: true,
+    blurb: 'Files, Sheets and folders automation',
+    tools: 'Same Google connection as Gmail',
   },
   {
     id: 'slack',
@@ -131,10 +129,9 @@ export function IntegrationsSlideover({
   const [loading, setLoading] = useState(false)
 
   const load = useCallback(async () => {
-    if (!userId || userId === 'unknown') return
     setLoading(true)
     try {
-      const res = await fetch(`/api/integrations/status?user_id=${encodeURIComponent(userId)}`)
+      const res = await fetch('/api/integrations/status', { cache: 'no-store' })
       const data = await res.json()
       setConnected(Array.isArray(data.connected) ? data.connected : [])
     } catch {
@@ -142,7 +139,7 @@ export function IntegrationsSlideover({
     } finally {
       setLoading(false)
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     if (open) {
@@ -183,13 +180,14 @@ export function IntegrationsSlideover({
           )}
           {PROVIDERS.map((p) => {
             const isConnected = connected.includes(p.id)
-            // Check if user has Google OAuth session for Gmail and Google Drive
-            const hasGoogleOAuth = authSession?.provider === 'google' || authSession?.user?.email
-            const isGoogleConnected = (p.id === 'gmail' || p.id === 'google_drive') && hasGoogleOAuth
-            
+            // Gmail + Drive are both served by the single Google connector (status route maps them).
+            const isGoogleConnected = false
+            const sid = encodeURIComponent(sessionIdForOAuth)
             const href =
               p.id === 'github'
-                ? `/api/oauth/github/connect?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionIdForOAuth)}`
+                ? `/api/oauth/github/connect?session_id=${sid}`
+                : p.id === 'gmail' || p.id === 'google_drive'
+                ? `/api/oauth/google/connect?session_id=${sid}`
                 : p.id === 'discord'
                 ? '/api/oauth/discord'
                 : undefined
@@ -239,7 +237,7 @@ export function IntegrationsSlideover({
         </div>
 
         <footer className="p-4 border-t border-border text-[11px] text-text-faint leading-relaxed">
-          Your tokens are stored securely per account.
+          Access is granted per account via each provider's own consent screen. You can revoke it there at any time.
         </footer>
       </aside>
     </>

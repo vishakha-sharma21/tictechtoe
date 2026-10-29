@@ -1,68 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { MongoClient } from 'mongodb'
-
-const MONGO_URL = process.env.MONGODB_URI || 'mongodb://localhost:27017'
-
-async function getMongoClient() {
-  const client = new MongoClient(MONGO_URL)
-  await client.connect()
-  return client
-}
+import { auth } from '@/lib/nextauth'
+import { getDb } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { user_id, session_id, messages } = body
+  const session = await auth()
+  if (!session?.user?.userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user_id = session.user.userId // never trust a user_id from the body
 
-    if (!user_id || !session_id || !messages || !Array.isArray(messages)) {
+  try {
+    const { session_id, messages } = await request.json()
+    if (typeof session_id !== 'string' || !Array.isArray(messages) || messages.length > 20) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const client = await getMongoClient()
-    const db = client.db('nexflow')
-    const chats = db.collection('chats')
-
-    // Find or create chat session
-    const existingChat = await chats.findOne({ user_id, session_id })
-    
-    if (!existingChat) {
-      // Create new chat session if it doesn't exist
-      await chats.insertOne({
-        user_id,
-        session_id,
-        title: messages[0]?.content?.substring(0, 50) + '...' || 'New Chat',
-        query: messages[0]?.content || '',
-        chat_history: [],
-        react_flow: { nodes: [], edges: [] },
-        completed: false,
-        created_at: new Date(),
-        updated_at: new Date()
-      })
-    }
-
-    // Add messages to chat history
     const now = new Date()
-    const messagesWithTimestamp = messages.map(msg => ({
-      ...msg,
-      timestamp: msg.timestamp || now.toISOString()
+    const clean = messages.map((m: any) => ({
+      role: m?.role === 'human' ? 'human' : 'agent',
+      content: String(m?.content ?? '').slice(0, 20000),
+      timestamp: now.toISOString(),
     }))
 
-    await chats.updateOne(
+    const db = await getDb()
+    await db.collection('chats').updateOne(
       { user_id, session_id },
       {
-        $push: {
-          chat_history: { $each: messagesWithTimestamp }
-        } as any,
-        $set: {
-          updated_at: now
-        }
-      }
+        $push: { chat_history: { $each: clean } } as any,
+        $set: { updated_at: now },
+        $setOnInsert: {
+          title: (clean[0]?.content ?? 'New Chat').substring(0, 50),
+          query: clean[0]?.content ?? '',
+          react_flow: { nodes: [], edges: [] },
+          completed: false,
+          created_at: now,
+        },
+      },
+      { upsert: true }
     )
-
-    await client.close()
-
     return NextResponse.json({ ok: true })
-
   } catch (error) {
     console.error('Error appending to chat:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

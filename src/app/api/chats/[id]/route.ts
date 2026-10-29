@@ -47,6 +47,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: 'Invalid chat id' }, { status: 400 })
     }
 
+    await connectDB()
     const chat = await Chat.findOne({
       _id: id,
       user_id: session.user.userId
