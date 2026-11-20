@@ -43,9 +43,9 @@ module.exports = {
       },
       fontFamily: {
         sans: ['var(--font-body)', 'system-ui', 'sans-serif'],
-        display: ['var(--font-display)', 'Georgia', 'serif'],
+        display: ['var(--font-display)', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
-        serif: ['var(--font-display)', 'Georgia', 'serif'],
+        serif: ['var(--font-display)', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         small: '8px',

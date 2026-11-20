@@ -46,7 +46,7 @@
   h1,
   h2,
   h3 {
-    font-family: var(--font-display), Georgia, serif;
+    font-family: var(--font-display), system-ui, sans-serif;
   }
 
   code,
@@ -211,7 +211,7 @@
   }
 
   .font-display {
-    font-family: var(--font-display), Georgia, serif;
+    font-family: var(--font-display), system-ui, sans-serif;
   }
 
   .font-mono-ui {

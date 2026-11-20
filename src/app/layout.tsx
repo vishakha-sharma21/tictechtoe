@@ -1,21 +1,21 @@
 import 'reactflow/dist/style.css'
 import './globals.css'
-import { DM_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
+import { Inter, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google'
 import { auth } from '@/lib/nextauth'
 import ReduxProvider from '@/components/providers/ReduxProvider'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import SessionProviderWrapper from '@/components/SessionProviderWrapper'
 import AuthModal from '@/components/auth/AuthModal'
 
-const dmSans = DM_Sans({
+const dmSans = Inter({
   subsets: ['latin'],
   weight: ['300', '400', '500', '600'],
   variable: '--font-body',
 })
 
-const instrumentSerif = Instrument_Serif({
+const instrumentSerif = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  weight: '400',
+  weight: ['500', '600', '700'],
   style: ['normal', 'italic'],
   variable: '--font-display',
 })
