@@ -220,9 +220,20 @@ export function IntegrationsSlideover({
                     Active
                   </span>
                 ) : isConnected || isGoogleConnected ? (
-                  <span className="inline-flex text-[11px] px-2.5 py-1 rounded-full bg-accent-green/15 text-accent-green border border-accent-green/30">
-                    Connected
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex text-[11px] px-2.5 py-1 rounded-full bg-accent-green/15 text-accent-green border border-accent-green/30">
+                      Connected
+                    </span>
+                    {href ? (
+                      <a
+                        href={href}
+                        title="Sign in again to this service if it says authentication failed"
+                        className="text-[11px] px-2.5 py-1 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-border-emphasis transition-colors"
+                      >
+                        Reconnect
+                      </a>
+                    ) : null}
+                  </div>
                 ) : (
                   <a
                     href={href}

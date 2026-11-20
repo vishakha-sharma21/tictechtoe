@@ -245,8 +245,8 @@ The interface is alive — but not annoying about it.
 
 ```bash
 # 1. Clone the repo
-git clone <repository-url>
-cd DAGent
+git clone -b prajinraj https://github.com/vishakha-sharma21/tictechtoe.git
+cd tictechtoe
 
 # 2. Install dependencies
 npm install
@@ -257,6 +257,10 @@ npm run dev
 # 4. Open your browser
 # → http://localhost:3000
 ```
+
+> **Default branch:** `prajinraj` is the primary branch. Clone, branch from, and open PRs against it.
+
+**Backend (Docker):** the Python MCP servers and agent run via `docker compose up --build` (see `docker-compose.yml`).
 
 **Available scripts:**
 ```bash
@@ -285,8 +289,9 @@ The full 4-panel layout. Chat on the left, visualization on the right. Type a wo
 
 These aren't vague aspirations — they're the next concrete steps:
 
-- [ ] **Real backend API** — replace mock data with actual workflow execution
-- [ ] **NextAuth.js** — user accounts, sessions, permissions
+- [x] **Accounts & per-user AI keys** — secured backend, user accounts
+- [x] **LangGraph agent + parallel DAG execution**
+- [ ] **Real backend API** — replace remaining mock data with actual workflow execution
 - [ ] **MongoDB Atlas** — persist workflows, history, and results
 - [ ] **WebSockets** — true real-time execution updates
 - [ ] **React Flow** — interactive, editable DAG canvas
@@ -302,10 +307,10 @@ These aren't vague aspirations — they're the next concrete steps:
 Contributions welcome. Here's the short version:
 
 1. Fork the repo
-2. Create a feature branch (`git checkout -b feat/my-feature`)
+2. Create a feature branch from `prajinraj` (`git checkout -b feat/my-feature prajinraj`)
 3. Make your changes
 4. Add tests if applicable
-5. Open a pull request
+5. Open a pull request against `prajinraj`
 
 For larger changes, open an issue first to discuss the approach.
 

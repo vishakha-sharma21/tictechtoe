@@ -136,9 +136,16 @@ REQUIRED_FIELDS = {
     "github.list_branches": ["owner", "repo"],
     "github.get_commits": ["owner", "repo"],
     "github.fork_repo": ["owner", "repo"],
+    "github.list_repos": [],
+    "github.get_authenticated_user": [],
+    "github.search_repos": ["query"],
+    "github.resolve_repo": ["query"],
 
     # Google Gmail tools
     "google.gmail_send": ["to", "subject", "body"],
+    "google.gmail_list": [],
+    "google.gmail_list_labels": [],
+    "google.sheets_list": [],
     "google.gmail_get": ["message_id"],
     "google.gmail_reply": ["message_id", "body"],
     "google.gmail_search": ["query"],

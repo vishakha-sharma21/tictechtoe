@@ -64,7 +64,7 @@ def make_github_request(user_id: str, method: str, endpoint: str, **kwargs):
         if response.status_code >= 400:
             error_msg = f"GitHub API error {response.status_code}"
             if response.status_code == 401:
-                error_msg = "GitHub authentication failed"
+                error_msg = "GitHub authentication failed - your GitHub token was revoked or expired. Open Integrations, disconnect GitHub and connect it again"
             elif response.status_code == 403:
                 error_msg = "GitHub permission denied"
             elif response.status_code == 404:
@@ -407,7 +407,7 @@ def delete_repo(req: DeleteRepoRequest):
             elif response.status_code >= 400:
                 error_msg = f"GitHub API error {response.status_code}"
                 if response.status_code == 401:
-                    error_msg = "GitHub authentication failed"
+                    error_msg = "GitHub authentication failed - your GitHub token was revoked or expired. Open Integrations, disconnect GitHub and connect it again"
                 raise HTTPException(status_code=response.status_code, detail=error_msg)
             else:
                 return response.json()
